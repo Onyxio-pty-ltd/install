@@ -55,12 +55,19 @@ prompt_server_ip() {
   fi
 
   echo "Choose the IP address TVs and phones should use to reach this server." >&2
-  mapfile -t IPS < <(detect_ips)
-  if [ "${#IPS[@]}" -gt 0 ]; then
-    for i in "${!IPS[@]}"; do
-      printf "  [%s] %s\n" "$((i + 1))" "${IPS[$i]}" >&2
-    done
-    default_ip="${IPS[0]}"
+  detected_ips="$(detect_ips)"
+  if [ -n "$detected_ips" ]; then
+    i=1
+    while IFS= read -r ip; do
+      [ -z "$ip" ] && continue
+      if [ "$i" -eq 1 ]; then
+        default_ip="$ip"
+      fi
+      printf "  [%s] %s\n" "$i" "$ip" >&2
+      i=$((i + 1))
+    done <<EOF
+$detected_ips
+EOF
   else
     default_ip="127.0.0.1"
   fi
