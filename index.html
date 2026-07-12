@@ -9,6 +9,46 @@ REGISTRY="${ONYXIO_REGISTRY:-ghcr.io}"
 REGISTRY_USERNAME="${ONYXIO_REGISTRY_USERNAME:-}"
 REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
 
+prompt() {
+  local message="$1"
+  local default_value="${2:-}"
+  local value=""
+
+  if [ -r /dev/tty ]; then
+    if [ -n "$default_value" ]; then
+      read -r -p "${message} [${default_value}]: " value </dev/tty
+      echo "${value:-$default_value}"
+    else
+      read -r -p "${message}: " value </dev/tty
+      echo "$value"
+    fi
+    return
+  fi
+
+  if [ -n "$default_value" ]; then
+    echo "$default_value"
+    return
+  fi
+
+  echo "Cannot prompt for ${message}; provide it as an environment variable." >&2
+  return 1
+}
+
+prompt_secret() {
+  local message="$1"
+  local value=""
+
+  if [ -r /dev/tty ]; then
+    read -r -s -p "${message}: " value </dev/tty
+    echo >&2
+    echo "$value"
+    return
+  fi
+
+  echo "Cannot prompt for ${message}; provide it as an environment variable." >&2
+  return 1
+}
+
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -72,21 +112,18 @@ EOF
     default_ip="127.0.0.1"
   fi
 
-  read -r -p "Server IP [${default_ip}]: " selected_ip >&2
-  echo "${selected_ip:-$default_ip}"
+  prompt "Server IP" "$default_ip"
 }
 
 docker_login_if_needed() {
   if [ -z "$REGISTRY_TOKEN" ]; then
     echo "ONYXIO_REGISTRY_TOKEN is not set."
-    read -r -s -p "Registry token for ${REGISTRY} (leave blank if image is public): " REGISTRY_TOKEN
-    echo
+    REGISTRY_TOKEN="$(prompt_secret "Registry token for ${REGISTRY} (leave blank if image is public)")"
   fi
 
   if [ -n "$REGISTRY_TOKEN" ]; then
     if [ -z "$REGISTRY_USERNAME" ]; then
-      read -r -p "Registry username [onyxio-pty-ltd]: " REGISTRY_USERNAME
-      REGISTRY_USERNAME="${REGISTRY_USERNAME:-onyxio-pty-ltd}"
+      REGISTRY_USERNAME="$(prompt "Registry username" "onyxio-pty-ltd")"
     fi
     echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
   fi
