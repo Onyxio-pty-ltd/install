@@ -88,6 +88,18 @@ require_docker() {
   fi
 }
 
+log_step() {
+  echo
+  echo "[Onyxio installer] $1"
+}
+
+pull_image() {
+  local image="$1"
+  log_step "Pulling ${image}"
+  echo "This can take several minutes on the first install. Docker will show layer progress when the registry starts sending data."
+  docker pull "$image"
+}
+
 prompt_server_ip() {
   if [ -n "${SERVER_IP:-}" ]; then
     echo "$SERVER_IP"
@@ -117,6 +129,7 @@ EOF
 
 docker_login_if_needed() {
   if [ -z "$REGISTRY_TOKEN" ]; then
+    log_step "Checking registry credentials"
     echo "ONYXIO_REGISTRY_TOKEN is not set."
     REGISTRY_TOKEN="$(prompt_secret "Registry token for ${REGISTRY} (leave blank if image is public)")"
   fi
@@ -125,7 +138,10 @@ docker_login_if_needed() {
     if [ -z "$REGISTRY_USERNAME" ]; then
       REGISTRY_USERNAME="$(prompt "Registry username for ${REGISTRY}")"
     fi
+    log_step "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}"
     echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
+  else
+    log_step "Skipping registry login"
   fi
 }
 
@@ -209,21 +225,25 @@ EOF
 }
 
 main() {
+  log_step "Starting Onyxio installer"
   require_root
   require_docker
 
+  log_step "Preparing install directory: ${INSTALL_DIR}"
   mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads"
   local server_ip
   server_ip="$(prompt_server_ip)"
 
+  log_step "Writing Docker Compose configuration"
   write_compose_file
   write_env_file "$server_ip"
   docker_login_if_needed
 
   cd "$INSTALL_DIR"
-  echo "Pulling Onyxio images..."
-  compose -f docker-compose.yml pull
-  echo "Starting Onyxio..."
+  pull_image "$SERVER_IMAGE"
+  pull_image "$POSTGRES_IMAGE"
+
+  log_step "Starting containers"
   compose -f docker-compose.yml up -d
 
   echo
