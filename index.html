@@ -123,7 +123,7 @@ docker_login_if_needed() {
 
   if [ -n "$REGISTRY_TOKEN" ]; then
     if [ -z "$REGISTRY_USERNAME" ]; then
-      REGISTRY_USERNAME="$(prompt "Registry username" "onyxio-pty-ltd")"
+      REGISTRY_USERNAME="$(prompt "Registry username for ${REGISTRY}")"
     fi
     echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
   fi
