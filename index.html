@@ -203,6 +203,9 @@ POSTGRES_PORT=5432
 
 JWT_SECRET=${jwt_secret}
 GRAPHQL_BODY_LIMIT=150mb
+
+ONYXIO_LICENSE_DIR=/app/backend/uploads/license
+ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
 EOF
 }
 
@@ -212,7 +215,7 @@ main() {
   require_docker
 
   log_step "Preparing install directory: ${INSTALL_DIR}"
-  mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads"
+  mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license"
   local server_ip
   server_ip="$(prompt_server_ip)"
 
@@ -234,6 +237,12 @@ main() {
   echo "TV:     http://${server_ip}:4000/tv/"
   echo "Mobile: http://${server_ip}:4000/mobile/"
   echo "Philips WebServices: http://${server_ip}/webservices.php"
+  echo
+  echo "License activation:"
+  echo "  1. Put the Onyxio license public key at ${INSTALL_DIR}/data/uploads/license/public-key.pem."
+  echo "  2. Open Admin > Settings > License and copy the installation ID."
+  echo "  3. Upload the signed license in the same admin screen."
+  echo "TV and mobile apps stay locked until the license is valid."
   echo
   echo "Install directory: ${INSTALL_DIR}"
   echo "View logs with:"

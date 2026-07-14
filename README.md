@@ -46,5 +46,8 @@ The installer creates:
 - `/opt/onyxio/.env`
 - `/opt/onyxio/data/postgres`
 - `/opt/onyxio/data/uploads`
+- `/opt/onyxio/data/uploads/license`
 
 The server receives Docker images only. It does not receive Onyxio source code.
+
+After install, put the Onyxio license public key at `/opt/onyxio/data/uploads/license/public-key.pem`, open Admin > Settings > License, copy the installation ID, and upload the signed license. TV and mobile apps stay locked until the license is valid.
