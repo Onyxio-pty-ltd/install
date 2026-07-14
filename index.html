@@ -34,21 +34,6 @@ prompt() {
   return 1
 }
 
-prompt_secret() {
-  local message="$1"
-  local value=""
-
-  if [ -r /dev/tty ]; then
-    read -r -s -p "${message}: " value </dev/tty
-    echo >&2
-    echo "$value"
-    return
-  fi
-
-  echo "Cannot prompt for ${message}; provide it as an environment variable." >&2
-  return 1
-}
-
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -129,20 +114,17 @@ EOF
 
 docker_login_if_needed() {
   if [ -z "$REGISTRY_TOKEN" ]; then
-    log_step "Checking registry credentials"
-    echo "ONYXIO_REGISTRY_TOKEN is not set."
-    REGISTRY_TOKEN="$(prompt_secret "Registry token for ${REGISTRY} (leave blank if image is public)")"
+    log_step "Skipping registry login"
+    echo "ONYXIO_REGISTRY_TOKEN is not set. Docker will use any existing login, or pull anonymously if the image is public."
+    return
   fi
 
-  if [ -n "$REGISTRY_TOKEN" ]; then
-    if [ -z "$REGISTRY_USERNAME" ]; then
-      REGISTRY_USERNAME="$(prompt "Registry username for ${REGISTRY}")"
-    fi
-    log_step "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}"
-    echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
-  else
-    log_step "Skipping registry login"
+  if [ -z "$REGISTRY_USERNAME" ]; then
+    REGISTRY_USERNAME="imannorouzi"
   fi
+
+  log_step "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}"
+  echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
 }
 
 write_compose_file() {
