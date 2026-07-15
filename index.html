@@ -206,6 +206,7 @@ GRAPHQL_BODY_LIMIT=150mb
 
 ONYXIO_LICENSE_DIR=/app/backend/uploads/license
 ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
+ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
 EOF
 }
 
@@ -240,8 +241,12 @@ main() {
   echo
   echo "License activation:"
   echo "  1. Put the Onyxio license public key at ${INSTALL_DIR}/data/uploads/license/public-key.pem."
-  echo "  2. Open Admin > Settings > License and copy the installation ID."
-  echo "  3. Upload the signed license in the same admin screen."
+  if grep -q '^ONYXIO_INSTALLATION_ID=onyxio-' "$INSTALL_DIR/.env"; then
+    echo "  2. This server is seeded with $(grep '^ONYXIO_INSTALLATION_ID=' "$INSTALL_DIR/.env" | cut -d= -f2-)."
+  else
+    echo "  2. Open Admin > Settings > License and copy the generated installation ID."
+  fi
+  echo "  3. Upload the signed license in Admin > Settings > License."
   echo "TV and mobile apps stay locked until the license is valid."
   echo
   echo "Install directory: ${INSTALL_DIR}"
