@@ -73,7 +73,11 @@ The installer creates:
 
 The server receives Docker images only. It does not receive Onyxio source code.
 
-Recommended flow: generate an installation ID and license before deployment, install with `ONYXIO_INSTALLATION_ID=onyxio-...`, put the Onyxio license public key at `/opt/onyxio/data/uploads/license/public-key.pem`, and upload the pre-issued signed license in Admin > Settings > License. TV and mobile apps stay locked until the license is valid.
+Recommended flow: generate an installation ID and license before deployment, install with `ONYXIO_INSTALLATION_ID=onyxio-...`, and upload the pre-issued signed license in Admin > Settings > License. TV and mobile apps stay locked until the license is valid.
+
+The installer writes the bundled Onyxio license public key to
+`/opt/onyxio/data/uploads/license/public-key.pem` when one is not already
+present.
 
 For ad-hoc installs, omit `ONYXIO_INSTALLATION_ID`; the backend will generate and persist an installation ID on first startup.
 

@@ -127,6 +127,24 @@ env_value() {
   grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
 }
 
+install_license_public_key() {
+  local target="$INSTALL_DIR/data/uploads/license/public-key.pem"
+
+  if [ -s "$target" ]; then
+    echo "Existing Onyxio license public key found; keeping it."
+    return
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  cat > "$target" <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAJ3L1RdaIk3k7vsJrkjLmJByQR7/kRtKxckIF2AsyitE=
+-----END PUBLIC KEY-----
+EOF
+  chmod 0644 "$target"
+  echo "Installed Onyxio license public key."
+}
+
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer with sudo:" >&2
@@ -488,6 +506,7 @@ main() {
   require_docker
 
   mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
+  install_license_public_key
   local server_ip
   server_ip="$(prompt_server_ip)"
   local env_created="false"
@@ -520,7 +539,7 @@ main() {
   print_https_summary
   echo
   echo "License activation:"
-  echo "  1. Put the Onyxio license public key at ${INSTALL_DIR}/data/uploads/license/public-key.pem."
+  echo "  1. The Onyxio license public key is installed at ${INSTALL_DIR}/data/uploads/license/public-key.pem."
   if grep -q '^ONYXIO_INSTALLATION_ID=onyxio-' "$INSTALL_DIR/.env"; then
     echo "  2. This server is seeded with $(grep '^ONYXIO_INSTALLATION_ID=' "$INSTALL_DIR/.env" | cut -d= -f2-)."
   else
