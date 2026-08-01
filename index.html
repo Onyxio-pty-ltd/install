@@ -390,6 +390,68 @@ start_compose() {
   compose -f docker-compose.yml up -d
 }
 
+print_onyxio_startup_logs() {
+  echo
+  echo "Recent Onyxio backend logs:"
+  compose -f docker-compose.yml logs --tail=160 onyxio || true
+}
+
+wait_for_onyxio_startup() {
+  local timeout_seconds="${ONYXIO_INSTALL_STARTUP_TIMEOUT_SECONDS:-120}"
+  local port
+  port="$(env_value "$INSTALL_DIR/.env" PORT)"
+  port="${port:-4000}"
+
+  echo "Waiting for Onyxio backend startup checks to pass."
+  local start_time
+  start_time="$(date +%s)"
+  local initial_restart_count=""
+
+  while [ $(( $(date +%s) - start_time )) -lt "$timeout_seconds" ]; do
+    local container_id
+    container_id="$(compose -f docker-compose.yml ps -q onyxio 2>/dev/null || true)"
+
+    if [ -n "$container_id" ]; then
+      local running restarting restart_count
+      running="$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || echo false)"
+      restarting="$(docker inspect -f '{{.State.Restarting}}' "$container_id" 2>/dev/null || echo false)"
+      restart_count="$(docker inspect -f '{{.RestartCount}}' "$container_id" 2>/dev/null || echo 0)"
+      case "$restart_count" in
+        '' | *[!0-9]*)
+          restart_count=0
+          ;;
+      esac
+
+      if [ -z "$initial_restart_count" ]; then
+        initial_restart_count="$restart_count"
+      fi
+
+      if [ "$restarting" = "true" ] || [ "$restart_count" -gt "$initial_restart_count" ]; then
+        echo "Onyxio backend restarted during startup; install did not complete cleanly." >&2
+        print_onyxio_startup_logs >&2
+        return 1
+      fi
+
+      if [ "$running" != "true" ]; then
+        echo "Onyxio backend container stopped during startup; install did not complete cleanly." >&2
+        print_onyxio_startup_logs >&2
+        return 1
+      fi
+
+      if ( : > "/dev/tcp/127.0.0.1/${port}" ) >/dev/null 2>&1; then
+        echo "Onyxio backend is accepting connections on port ${port}."
+        return 0
+      fi
+    fi
+
+    sleep 2
+  done
+
+  echo "Onyxio backend did not accept connections on port ${port} within ${timeout_seconds} seconds." >&2
+  print_onyxio_startup_logs >&2
+  return 1
+}
+
 print_https_summary() {
   if ! https_configured; then
     return
@@ -447,9 +509,10 @@ main() {
   fi
   echo "Starting Onyxio..."
   start_compose
+  wait_for_onyxio_startup
 
   echo
-  echo "Onyxio is starting."
+  echo "Onyxio is running."
   echo "Admin:  http://${server_ip}:4000/admin/"
   echo "TV:     http://${server_ip}:4000/tv/"
   echo "Mobile: http://${server_ip}:4000/mobile/"
