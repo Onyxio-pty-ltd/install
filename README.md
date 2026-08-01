@@ -8,6 +8,18 @@ Install Onyxio:
 curl -fsSL https://install.onyxio.com.au | sudo bash
 ```
 
+Uninstall Onyxio:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo bash
+```
+
+For a non-interactive lab reset:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo bash -s -- --yes --remove-images
+```
+
 If the container image is private, pass a registry token:
 
 ```bash
