@@ -5,6 +5,7 @@ INSTALL_DIR="${ONYXIO_INSTALL_DIR:-/opt/onyxio}"
 VERSION="${ONYXIO_VERSION:-latest}"
 SERVER_IMAGE="${ONYXIO_SERVER_IMAGE:-ghcr.io/onyxio-pty-ltd/server:${VERSION}}"
 POSTGRES_IMAGE="${ONYXIO_POSTGRES_IMAGE:-postgres:15}"
+HTTPS_PROXY_IMAGE="${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
 REGISTRY="${ONYXIO_REGISTRY:-ghcr.io}"
 REGISTRY_USERNAME="${ONYXIO_REGISTRY_USERNAME:-}"
 REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
@@ -34,6 +35,43 @@ prompt() {
   return 1
 }
 
+prompt_secret() {
+  local message="$1"
+  local value=""
+
+  if [ -r /dev/tty ]; then
+    read -r -s -p "${message}: " value </dev/tty
+    echo >&2
+    echo "$value"
+    return
+  fi
+
+  echo "Cannot prompt for ${message}; provide it as an environment variable." >&2
+  return 1
+}
+
+prompt_yes_no() {
+  local message="$1"
+  local default_value="${2:-n}"
+  local value=""
+
+  if [ ! -r /dev/tty ]; then
+    echo "$default_value"
+    return
+  fi
+
+  read -r -p "${message} [${default_value}]: " value </dev/tty
+  value="${value:-$default_value}"
+  case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
+    y | yes | true | 1)
+      echo "y"
+      ;;
+    *)
+      echo "n"
+      ;;
+  esac
+}
+
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -57,6 +95,38 @@ detect_ips() {
   hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' || true
 }
 
+set_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+
+  if grep -q "^${key}=" "$file"; then
+    local tmp
+    tmp="$(mktemp)"
+    awk -v key="$key" -v value="$value" '
+      BEGIN { replaced = 0 }
+      $0 ~ "^" key "=" {
+        print key "=" value
+        replaced = 1
+        next
+      }
+      { print }
+      END {
+        if (!replaced) print key "=" value
+      }
+    ' "$file" > "$tmp"
+    mv "$tmp" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+env_value() {
+  local file="$1"
+  local key="$2"
+  grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
+}
+
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer with sudo:" >&2
@@ -71,18 +141,6 @@ require_docker() {
     echo "Install Docker Engine and the Docker Compose plugin, then run this installer again." >&2
     exit 1
   fi
-}
-
-log_step() {
-  echo
-  echo "[Onyxio installer] $1"
-}
-
-pull_image() {
-  local image="$1"
-  log_step "Pulling ${image}"
-  echo "This can take several minutes on the first install. Docker will show layer progress when the registry starts sending data."
-  docker pull "$image"
 }
 
 prompt_server_ip() {
@@ -114,17 +172,16 @@ EOF
 
 docker_login_if_needed() {
   if [ -z "$REGISTRY_TOKEN" ]; then
-    log_step "Skipping registry login"
-    echo "ONYXIO_REGISTRY_TOKEN is not set. Docker will use any existing login, or pull anonymously if the image is public."
-    return
+    echo "ONYXIO_REGISTRY_TOKEN is not set."
+    REGISTRY_TOKEN="$(prompt_secret "Registry token for ${REGISTRY} (leave blank if image is public)")"
   fi
 
-  if [ -z "$REGISTRY_USERNAME" ]; then
-    REGISTRY_USERNAME="imannorouzi"
+  if [ -n "$REGISTRY_TOKEN" ]; then
+    if [ -z "$REGISTRY_USERNAME" ]; then
+      REGISTRY_USERNAME="$(prompt "Registry username" "onyxio-pty-ltd")"
+    fi
+    echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
   fi
-
-  log_step "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}"
-  echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
 }
 
 write_compose_file() {
@@ -164,6 +221,63 @@ services:
       PHILIPS_WEBSERVICES_BOOTSTRAP_PORT: ${PHILIPS_WEBSERVICES_BOOTSTRAP_PORT:-80}
     volumes:
       - ./data/uploads:/app/backend/uploads
+EOF
+}
+
+write_https_files() {
+  mkdir -p "$INSTALL_DIR/nginx"
+
+  cat > "$INSTALL_DIR/docker-compose.https.yml" <<'EOF'
+services:
+  https-proxy:
+    image: ${HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - onyxio
+    environment:
+      HTTPS_HOST: ${HTTPS_HOST:-_}
+      HTTPS_LISTEN_ADDR: ${HTTPS_LISTEN_ADDR:-0.0.0.0}
+      HTTPS_PORT: ${HTTPS_PORT:-443}
+      PORT: ${PORT:-4000}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/etc/onyxio/tls/fullchain.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/etc/onyxio/tls/privkey.pem}
+      NGINX_ENVSUBST_FILTER: "^(HTTPS_HOST|HTTPS_LISTEN_ADDR|HTTPS_PORT|PORT|TLS_CERT_FILE|TLS_KEY_FILE)$"
+    volumes:
+      - ./nginx/onyxio-https.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./data/tls:/etc/onyxio/tls:ro
+EOF
+
+  cat > "$INSTALL_DIR/nginx/onyxio-https.conf.template" <<'EOF'
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  '' close;
+}
+
+server {
+  listen ${HTTPS_LISTEN_ADDR}:${HTTPS_PORT} ssl;
+  server_name ${HTTPS_HOST};
+
+  ssl_certificate ${TLS_CERT_FILE};
+  ssl_certificate_key ${TLS_KEY_FILE};
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+
+  client_max_body_size 150m;
+
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    proxy_pass http://127.0.0.1:${PORT};
+  }
+}
 EOF
 }
 
@@ -210,27 +324,129 @@ ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
 EOF
 }
 
+configure_https_env() {
+  local server_ip="$1"
+  local allow_prompt="${2:-false}"
+  local env_file="$INSTALL_DIR/.env"
+  local enable_https="${ONYXIO_ENABLE_HTTPS:-}"
+
+  if [ -z "$enable_https" ] && grep -q '^ONYXIO_ENABLE_HTTPS=true' "$env_file" 2>/dev/null; then
+    enable_https="true"
+  fi
+
+  if [ -z "$enable_https" ] && [ "$allow_prompt" = "true" ]; then
+    enable_https="$(prompt_yes_no "Configure optional HTTPS front door for mobile AI now?" "n")"
+  fi
+
+  case "$(printf '%s' "$enable_https" | tr '[:upper:]' '[:lower:]')" in
+    y | yes | true | 1)
+      ;;
+    *)
+      return
+      ;;
+  esac
+
+  local https_host listen_addr https_port proxy_image
+  https_host="${HTTPS_HOST:-$(env_value "$env_file" HTTPS_HOST)}"
+  if [ -z "$https_host" ]; then
+    https_host="$(prompt "HTTPS hostname for guest phones" "")"
+  fi
+  if [ -z "$https_host" ]; then
+    echo "HTTPS was requested but no HTTPS_HOST was provided; skipping HTTPS proxy setup." >&2
+    return
+  fi
+
+  listen_addr="${HTTPS_LISTEN_ADDR:-$(env_value "$env_file" HTTPS_LISTEN_ADDR)}"
+  listen_addr="${listen_addr:-$server_ip}"
+  https_port="${HTTPS_PORT:-$(env_value "$env_file" HTTPS_PORT)}"
+  https_port="${https_port:-443}"
+  proxy_image="${HTTPS_PROXY_IMAGE:-$(env_value "$env_file" HTTPS_PROXY_IMAGE)}"
+  proxy_image="${proxy_image:-$HTTPS_PROXY_IMAGE}"
+
+  set_env_value "$env_file" ONYXIO_ENABLE_HTTPS true
+  set_env_value "$env_file" HTTPS_HOST "$https_host"
+  set_env_value "$env_file" HTTPS_LISTEN_ADDR "$listen_addr"
+  set_env_value "$env_file" HTTPS_PORT "$https_port"
+  set_env_value "$env_file" HTTPS_PROXY_IMAGE "$proxy_image"
+  set_env_value "$env_file" MOBILE_APP_PUBLIC_URL "https://${https_host}/mobile/"
+}
+
+tls_certificates_available() {
+  [ -s "$INSTALL_DIR/data/tls/fullchain.pem" ] && [ -s "$INSTALL_DIR/data/tls/privkey.pem" ]
+}
+
+https_configured() {
+  grep -q '^ONYXIO_ENABLE_HTTPS=true' "$INSTALL_DIR/.env" 2>/dev/null &&
+    [ -n "$(env_value "$INSTALL_DIR/.env" HTTPS_HOST)" ] &&
+    [ -f "$INSTALL_DIR/docker-compose.https.yml" ]
+}
+
+start_compose() {
+  if https_configured && tls_certificates_available; then
+    compose -f docker-compose.yml -f docker-compose.https.yml up -d
+    return
+  fi
+
+  compose -f docker-compose.yml up -d
+}
+
+print_https_summary() {
+  if ! https_configured; then
+    return
+  fi
+
+  local env_file="$INSTALL_DIR/.env"
+  local https_host listen_addr https_port
+  https_host="$(env_value "$env_file" HTTPS_HOST)"
+  listen_addr="$(env_value "$env_file" HTTPS_LISTEN_ADDR)"
+  https_port="$(env_value "$env_file" HTTPS_PORT)"
+  https_port="${https_port:-443}"
+
+  echo
+  echo "HTTPS front door:"
+  echo "  DNS/split DNS: ${https_host} -> ${listen_addr}"
+  echo "  Firewall: allow guest clients to ${listen_addr} TCP ${https_port}"
+  echo "  Admin setting: Settings > Network > Mobile HTTPS URL = https://${https_host}/mobile/"
+
+  if tls_certificates_available; then
+    echo "  Proxy: running via docker-compose.https.yml"
+    echo "  Mobile HTTPS: https://${https_host}/mobile/"
+  else
+    echo "  Proxy: not started because TLS files are missing."
+    echo "  Put certificates at:"
+    echo "    ${INSTALL_DIR}/data/tls/fullchain.pem"
+    echo "    ${INSTALL_DIR}/data/tls/privkey.pem"
+    echo "  Then start nginx with:"
+    echo "    cd ${INSTALL_DIR} && docker compose -f docker-compose.yml -f docker-compose.https.yml up -d"
+  fi
+}
+
 main() {
-  log_step "Starting Onyxio installer"
   require_root
   require_docker
 
-  log_step "Preparing install directory: ${INSTALL_DIR}"
-  mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license"
+  mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
   local server_ip
   server_ip="$(prompt_server_ip)"
+  local env_created="false"
+  if [ ! -f "$INSTALL_DIR/.env" ]; then
+    env_created="true"
+  fi
 
-  log_step "Writing Docker Compose configuration"
   write_compose_file
+  write_https_files
   write_env_file "$server_ip"
+  configure_https_env "$server_ip" "$env_created"
   docker_login_if_needed
 
   cd "$INSTALL_DIR"
-  pull_image "$SERVER_IMAGE"
-  pull_image "$POSTGRES_IMAGE"
-
-  log_step "Starting containers"
-  compose -f docker-compose.yml up -d
+  echo "Pulling Onyxio images..."
+  compose -f docker-compose.yml pull
+  if https_configured; then
+    docker pull "$(env_value "$INSTALL_DIR/.env" HTTPS_PROXY_IMAGE)"
+  fi
+  echo "Starting Onyxio..."
+  start_compose
 
   echo
   echo "Onyxio is starting."
@@ -238,6 +454,7 @@ main() {
   echo "TV:     http://${server_ip}:4000/tv/"
   echo "Mobile: http://${server_ip}:4000/mobile/"
   echo "Philips WebServices: http://${server_ip}/webservices.php"
+  print_https_summary
   echo
   echo "License activation:"
   echo "  1. Put the Onyxio license public key at ${INSTALL_DIR}/data/uploads/license/public-key.pem."
