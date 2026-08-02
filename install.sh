@@ -541,7 +541,7 @@ main() {
 
   echo
   echo "Onyxio is running."
-  echo "Admin:  http://${server_ip}:4000/admin/"
+  echo "Admin:  http://${server_ip}:4000/"
   echo "TV:     http://${server_ip}:4000/tv/"
   echo "Mobile: http://${server_ip}:4000/mobile/"
   echo "Philips WebServices: http://${server_ip}/webservices.php"
