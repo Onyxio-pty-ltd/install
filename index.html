@@ -198,7 +198,16 @@ docker_login_if_needed() {
     if [ -z "$REGISTRY_USERNAME" ]; then
       REGISTRY_USERNAME="$(prompt "Registry username" "onyxio-pty-ltd")"
     fi
-    echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
+    if [ -z "$REGISTRY_USERNAME" ]; then
+      echo "Registry username is required when ONYXIO_REGISTRY_TOKEN is set." >&2
+      exit 1
+    fi
+    echo "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}..."
+    if command -v timeout >/dev/null 2>&1; then
+      printf '%s\n' "$REGISTRY_TOKEN" | timeout 60s docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
+    else
+      printf '%s\n' "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
+    fi
   fi
 }
 
