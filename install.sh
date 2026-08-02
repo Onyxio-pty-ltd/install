@@ -138,7 +138,7 @@ install_license_public_key() {
   mkdir -p "$(dirname "$target")"
   cat > "$target" <<'EOF'
 -----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAJ3L1RdaIk3k7vsJrkjLmJByQR7/kRtKxckIF2AsyitE=
+MCowBQYDK2VwAyEArEdXtD7u5kZwxS4Rr5rBbr5pEr6qXT3PnO0cfGO7Ztw=
 -----END PUBLIC KEY-----
 EOF
   chmod 0644 "$target"
