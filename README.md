@@ -14,6 +14,12 @@ Uninstall Onyxio:
 curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo bash
 ```
 
+Upgrade Onyxio:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.03 bash
+```
+
 For a non-interactive lab reset:
 
 ```bash
@@ -100,3 +106,45 @@ docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
 
 Then set Admin Panel -> Settings -> Network -> Mobile HTTPS URL to
 `https://remote.example-hotel.com/mobile/`.
+
+## Upgrades
+
+The upgrade script keeps persistent data in place, creates a Postgres backup
+under `/opt/onyxio/backups`, updates only `ONYXIO_VERSION` and
+`ONYXIO_SERVER_IMAGE` in `/opt/onyxio/.env`, pulls the new backend image, and
+recreates the Onyxio container.
+
+Pinned version:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.03 bash
+```
+
+Full image override:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_SERVER_IMAGE=ghcr.io/onyxio-pty-ltd/server:2026.08.03 \
+  bash
+```
+
+If the image is private, pass registry credentials:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_VERSION=2026.08.03 \
+  ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
+  ONYXIO_REGISTRY_TOKEN=TOKEN \
+  bash
+```
+
+The script prints rollback commands using the previous image tag after each
+upgrade. Skip the automatic database backup only when another verified backup
+already exists:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_VERSION=2026.08.03 \
+  ONYXIO_SKIP_UPGRADE_BACKUP=true \
+  bash
+```
