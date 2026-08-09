@@ -510,6 +510,17 @@ print_https_summary() {
   fi
 }
 
+print_philips_bootstrap_summary() {
+  local server_ip="$1"
+
+  echo
+  echo "Philips first-run bootstrap:"
+  echo "  DNS record / local DNS override: web.services.tpvision.htv -> ${server_ip}"
+  echo "  TV request handled by Onyxio: http://web.services.tpvision.htv/webservices.php"
+  echo "  Direct test URL: http://${server_ip}/webservices.php"
+  echo "  Firewall: allow Philips TVs to ${server_ip} TCP 80"
+}
+
 main() {
   require_root
   require_docker
@@ -545,6 +556,7 @@ main() {
   echo "TV:     http://${server_ip}:4000/tv/"
   echo "Mobile: http://${server_ip}:4000/mobile/"
   echo "Philips WebServices: http://${server_ip}/webservices.php"
+  print_philips_bootstrap_summary "$server_ip"
   print_https_summary
   echo
   echo "License activation:"

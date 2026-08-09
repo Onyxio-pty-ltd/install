@@ -107,6 +107,16 @@ docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
 Then set Admin Panel -> Settings -> Network -> Mobile HTTPS URL to
 `https://remote.example-hotel.com/mobile/`.
 
+For Philips TV first-run bootstrap and cloning, add a local DNS record or DNS
+override on the TV/device network:
+
+```text
+web.services.tpvision.htv -> <SERVER_IP>
+```
+
+The TV will request `http://web.services.tpvision.htv/webservices.php`, which is
+served by the Onyxio WebServices API on TCP port 80.
+
 ## Upgrades
 
 The upgrade script keeps persistent data in place, creates a Postgres backup
