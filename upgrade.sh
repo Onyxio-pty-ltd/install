@@ -158,6 +158,35 @@ require_docker() {
   fi
 }
 
+require_network_agent_dependencies() {
+  local missing_packages=()
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    missing_packages+=(python3)
+  fi
+  if ! command -v netplan >/dev/null 2>&1; then
+    missing_packages+=(netplan.io)
+  fi
+  if ! command -v ip >/dev/null 2>&1; then
+    missing_packages+=(iproute2)
+  fi
+
+  if [ "${#missing_packages[@]}" -eq 0 ]; then
+    return
+  fi
+
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "Installing host packages for the Onyxio network agent: ${missing_packages[*]}"
+    apt-get update
+    apt-get install -y "${missing_packages[@]}"
+    return
+  fi
+
+  echo "Missing host packages required for the Onyxio network agent: ${missing_packages[*]}" >&2
+  echo "Install them, then run this upgrade again." >&2
+  exit 1
+}
+
 require_install() {
   if [ ! -d "$INSTALL_DIR" ]; then
     echo "Install directory does not exist: ${INSTALL_DIR}" >&2
@@ -173,6 +202,62 @@ require_install() {
     echo "Missing ${INSTALL_DIR}/.env; this does not look like an Onyxio install." >&2
     exit 1
   fi
+}
+
+install_network_agent() {
+  local source_dir agent_source service_file
+  source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd || pwd)"
+  agent_source="$source_dir/network-agent.py"
+  service_file="/etc/systemd/system/onyxio-network-agent.service"
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemd is required for the Onyxio host network agent." >&2
+    exit 1
+  fi
+
+  mkdir -p "$INSTALL_DIR/network-agent"
+  if [ -f "$agent_source" ]; then
+    cp "$agent_source" "$INSTALL_DIR/network-agent/agent.py"
+  else
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/network-agent.py" \
+      -o "$INSTALL_DIR/network-agent/agent.py"
+  fi
+  chmod 0755 "$INSTALL_DIR/network-agent/agent.py"
+
+  cat > "$service_file" <<EOF
+[Unit]
+Description=Onyxio Network Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ONYXIO_NETWORK_AGENT_HOST=127.0.0.1
+Environment=ONYXIO_NETWORK_AGENT_PORT=8097
+Environment=ONYXIO_NETPLAN_FILE=/etc/netplan/99-onyxio.yaml
+Environment=ONYXIO_NETPLAN_LEGACY_FILE=/etc/netplan/90-onyxio-managed.yaml
+ExecStart=/usr/bin/env python3 ${INSTALL_DIR}/network-agent/agent.py
+Restart=on-failure
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now onyxio-network-agent.service >/dev/null
+  systemctl restart onyxio-network-agent.service
+  echo "Onyxio host network agent is running."
+}
+
+remove_old_network_env() {
+  if grep -q '^ONYXIO_NETPLAN_COMMAND_MODE=' "$INSTALL_DIR/.env"; then
+    sed -i.bak '/^ONYXIO_NETPLAN_COMMAND_MODE=/d' "$INSTALL_DIR/.env"
+  fi
+  set_env_value "$INSTALL_DIR/.env" ONYXIO_NETWORK_APPLY_MODE agent
+  set_env_value "$INSTALL_DIR/.env" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
 }
 
 docker_login_if_requested() {
@@ -303,7 +388,10 @@ print_rollback_instructions() {
 main() {
   require_root
   require_docker
+  require_network_agent_dependencies
   require_install
+  install_network_agent
+  remove_old_network_env
   docker_login_if_requested
 
   cd "$INSTALL_DIR"

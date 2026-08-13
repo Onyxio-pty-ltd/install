@@ -172,6 +172,18 @@ remove_leftover_containers() {
     done
 }
 
+remove_network_agent() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return
+  fi
+
+  systemctl disable --now onyxio-network-agent.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/onyxio-network-agent.service
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl reset-failed onyxio-network-agent.service >/dev/null 2>&1 || true
+  echo "Removed Onyxio host network agent service."
+}
+
 remove_images() {
   if ! docker_available; then
     echo "Docker is not available; skipping image cleanup."
@@ -204,6 +216,7 @@ main() {
 
   stop_compose_stack
   remove_leftover_containers
+  remove_network_agent
   remove_install_dir
 
   if [ "$REMOVE_IMAGES" = "true" ]; then

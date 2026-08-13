@@ -161,6 +161,88 @@ require_docker() {
   fi
 }
 
+require_network_agent_dependencies() {
+  local missing_packages=()
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    missing_packages+=(python3)
+  fi
+  if ! command -v netplan >/dev/null 2>&1; then
+    missing_packages+=(netplan.io)
+  fi
+  if ! command -v ip >/dev/null 2>&1; then
+    missing_packages+=(iproute2)
+  fi
+
+  if [ "${#missing_packages[@]}" -eq 0 ]; then
+    return
+  fi
+
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "Installing host packages for the Onyxio network agent: ${missing_packages[*]}"
+    apt-get update
+    apt-get install -y "${missing_packages[@]}"
+    return
+  fi
+
+  echo "Missing host packages required for the Onyxio network agent: ${missing_packages[*]}" >&2
+  echo "Install them, then run this installer again." >&2
+  exit 1
+}
+
+install_network_agent() {
+  local source_dir agent_source service_file
+  source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd || pwd)"
+  agent_source="$source_dir/network-agent.py"
+  service_file="/etc/systemd/system/onyxio-network-agent.service"
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemd is required for the Onyxio host network agent." >&2
+    exit 1
+  fi
+
+  mkdir -p "$INSTALL_DIR/network-agent"
+  if [ -f "$agent_source" ]; then
+    cp "$agent_source" "$INSTALL_DIR/network-agent/agent.py"
+  else
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/network-agent.py" \
+      -o "$INSTALL_DIR/network-agent/agent.py"
+  fi
+  chmod 0755 "$INSTALL_DIR/network-agent/agent.py"
+
+  cat > "$service_file" <<EOF
+[Unit]
+Description=Onyxio Network Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ONYXIO_NETWORK_AGENT_HOST=127.0.0.1
+Environment=ONYXIO_NETWORK_AGENT_PORT=8097
+Environment=ONYXIO_NETPLAN_FILE=/etc/netplan/99-onyxio.yaml
+Environment=ONYXIO_NETPLAN_LEGACY_FILE=/etc/netplan/90-onyxio-managed.yaml
+ExecStart=/usr/bin/env python3 ${INSTALL_DIR}/network-agent/agent.py
+Restart=on-failure
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now onyxio-network-agent.service >/dev/null
+  systemctl restart onyxio-network-agent.service
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS http://127.0.0.1:8097/health >/dev/null ||
+      echo "Onyxio network agent started, but health check did not respond yet."
+  fi
+  echo "Onyxio host network agent is running."
+}
+
 prompt_server_ip() {
   if [ -n "${SERVER_IP:-}" ]; then
     echo "$SERVER_IP"
@@ -235,10 +317,6 @@ services:
     image: ${ONYXIO_SERVER_IMAGE}
     restart: unless-stopped
     network_mode: host
-    pid: host
-    cap_add:
-      - NET_ADMIN
-      - SYS_ADMIN
     depends_on:
       postgres:
         condition: service_healthy
@@ -250,12 +328,9 @@ services:
       WEB_SOCKET_PORT: ${WEB_SOCKET_PORT:-8081}
       PHILIPS_WEBSERVICES_PORT: ${PHILIPS_WEBSERVICES_PORT:-8080}
       PHILIPS_WEBSERVICES_BOOTSTRAP_PORT: ${PHILIPS_WEBSERVICES_BOOTSTRAP_PORT:-80}
-      ONYXIO_NETPLAN_COMMAND_MODE: ${ONYXIO_NETPLAN_COMMAND_MODE:-host-nsenter}
+      ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
     volumes:
       - ./data/uploads:/app/backend/uploads
-      - /etc/netplan:/etc/netplan
-      - /run/systemd:/run/systemd
-      - /run/dbus:/run/dbus
 EOF
 }
 
@@ -492,15 +567,36 @@ EOF
   chmod +x "$INSTALL_DIR/bin/enable-https"
 }
 
+write_lifecycle_scripts() {
+  cat > "$INSTALL_DIR/upgrade.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | bash -s -- "$@"
+EOF
+  chmod +x "$INSTALL_DIR/upgrade.sh"
+
+  cat > "$INSTALL_DIR/uninstall.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+curl -fsSL https://install.onyxio.com.au/uninstall.sh | bash -s -- "$@"
+EOF
+  chmod +x "$INSTALL_DIR/uninstall.sh"
+}
+
 write_env_file() {
   local server_ip="$1"
   if [ -f "$INSTALL_DIR/.env" ]; then
     echo "Existing ${INSTALL_DIR}/.env found; keeping existing configuration."
-    if ! grep -q '^ONYXIO_NETWORK_APPLY_MODE=' "$INSTALL_DIR/.env"; then
-      printf '\nONYXIO_NETWORK_APPLY_MODE=netplan\n' >> "$INSTALL_DIR/.env"
+    if grep -q '^ONYXIO_NETPLAN_COMMAND_MODE=' "$INSTALL_DIR/.env"; then
+      sed -i.bak '/^ONYXIO_NETPLAN_COMMAND_MODE=/d' "$INSTALL_DIR/.env"
     fi
-    if ! grep -q '^ONYXIO_NETPLAN_COMMAND_MODE=' "$INSTALL_DIR/.env"; then
-      printf '\nONYXIO_NETPLAN_COMMAND_MODE=host-nsenter\n' >> "$INSTALL_DIR/.env"
+    if ! grep -q '^ONYXIO_NETWORK_APPLY_MODE=' "$INSTALL_DIR/.env"; then
+      printf '\nONYXIO_NETWORK_APPLY_MODE=agent\n' >> "$INSTALL_DIR/.env"
+    else
+      set_env_value "$INSTALL_DIR/.env" ONYXIO_NETWORK_APPLY_MODE agent
+    fi
+    if ! grep -q '^ONYXIO_NETWORK_AGENT_URL=' "$INSTALL_DIR/.env"; then
+      printf '\nONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097\n' >> "$INSTALL_DIR/.env"
     fi
     return
   fi
@@ -526,8 +622,8 @@ PORT=4000
 WEB_SOCKET_PORT=8081
 PHILIPS_WEBSERVICES_PORT=8080
 PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
-ONYXIO_NETWORK_APPLY_MODE=netplan
-ONYXIO_NETPLAN_COMMAND_MODE=host-nsenter
+ONYXIO_NETWORK_APPLY_MODE=agent
+ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${postgres_password}
@@ -721,8 +817,10 @@ print_philips_bootstrap_summary() {
 main() {
   require_root
   require_docker
+  require_network_agent_dependencies
 
   mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
+  install_network_agent
   install_license_public_key
   local server_ip
   server_ip="$(prompt_server_ip)"
@@ -734,6 +832,7 @@ main() {
   write_compose_file
   write_https_files
   write_enable_https_script
+  write_lifecycle_scripts
   write_env_file "$server_ip"
   configure_https_env "$server_ip" "$env_created"
   docker_login_if_needed
