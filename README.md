@@ -95,16 +95,19 @@ network to the server guest IP. Put certificates at:
 /opt/onyxio/data/tls/privkey.pem
 ```
 
-When `ONYXIO_ENABLE_HTTPS=true`, the installer writes nginx settings and starts
-the HTTPS proxy only if those files already exist. If certificates are added
-later, run:
+The installer writes nginx settings and installs a post-onboarding helper at
+`/opt/onyxio/bin/enable-https`. After onboarding has applied the final
+interface addresses, run the command shown in Admin Panel -> Settings ->
+Interfaces. It will look like:
 
 ```bash
-cd /opt/onyxio
-docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+sudo /opt/onyxio/bin/enable-https \
+  --host remote.example-hotel.com \
+  --listen-address 172.20.0.10 \
+  --port 443
 ```
 
-Then set Admin Panel -> Settings -> Network -> Mobile HTTPS URL to
+Then set Admin Panel -> Settings -> Interfaces -> Mobile HTTPS URL to
 `https://remote.example-hotel.com/mobile/`.
 
 For Philips TV first-run bootstrap and cloning, add a local DNS record or DNS

@@ -235,6 +235,8 @@ services:
     image: ${ONYXIO_SERVER_IMAGE}
     restart: unless-stopped
     network_mode: host
+    cap_add:
+      - NET_ADMIN
     depends_on:
       postgres:
         condition: service_healthy
@@ -248,6 +250,7 @@ services:
       PHILIPS_WEBSERVICES_BOOTSTRAP_PORT: ${PHILIPS_WEBSERVICES_BOOTSTRAP_PORT:-80}
     volumes:
       - ./data/uploads:/app/backend/uploads
+      - /etc/netplan:/etc/netplan
 EOF
 }
 
@@ -306,6 +309,182 @@ server {
   }
 }
 EOF
+}
+
+write_enable_https_script() {
+  mkdir -p "$INSTALL_DIR/bin"
+
+  cat > "$INSTALL_DIR/bin/enable-https" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="${ONYXIO_INSTALL_DIR:-/opt/onyxio}"
+HTTPS_PROXY_IMAGE_DEFAULT="${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  sudo /opt/onyxio/bin/enable-https --host HOST --listen-address IP [--port 443]
+
+Starts or updates the Onyxio HTTPS proxy after onboarding has selected the
+final network interface address.
+
+Required:
+  --host             Public HTTPS host phones will open.
+  --listen-address   Local server IP the nginx proxy should bind to.
+
+Optional:
+  --port             HTTPS listen port. Default: 443.
+  --proxy-image      nginx image. Default: nginx:1.27-alpine.
+USAGE
+}
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+  else
+    echo "Docker Compose is required." >&2
+    exit 1
+  fi
+}
+
+set_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+
+  if grep -q "^${key}=" "$file"; then
+    local tmp
+    tmp="$(mktemp)"
+    awk -v key="$key" -v value="$value" '
+      BEGIN { replaced = 0 }
+      $0 ~ "^" key "=" {
+        print key "=" value
+        replaced = 1
+        next
+      }
+      { print }
+      END {
+        if (!replaced) print key "=" value
+      }
+    ' "$file" > "$tmp"
+    mv "$tmp" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+env_value() {
+  local file="$1"
+  local key="$2"
+  grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
+}
+
+host=""
+listen_address=""
+port="443"
+proxy_image=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --host)
+      host="${2:-}"
+      shift 2
+      ;;
+    --host=*)
+      host="${1#*=}"
+      shift
+      ;;
+    --listen-address)
+      listen_address="${2:-}"
+      shift 2
+      ;;
+    --listen-address=*)
+      listen_address="${1#*=}"
+      shift
+      ;;
+    --port)
+      port="${2:-}"
+      shift 2
+      ;;
+    --port=*)
+      port="${1#*=}"
+      shift
+      ;;
+    --proxy-image)
+      proxy_image="${2:-}"
+      shift 2
+      ;;
+    --proxy-image=*)
+      proxy_image="${1#*=}"
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run this command with sudo." >&2
+  exit 1
+fi
+
+if [ -z "$host" ] || [ -z "$listen_address" ]; then
+  usage >&2
+  exit 1
+fi
+
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+  echo "Onyxio is not installed at ${INSTALL_DIR}; .env is missing." >&2
+  exit 1
+fi
+
+if [ ! -f "$INSTALL_DIR/docker-compose.https.yml" ] || [ ! -f "$INSTALL_DIR/nginx/onyxio-https.conf.template" ]; then
+  echo "HTTPS proxy files are missing. Re-run the latest Onyxio installer, then retry." >&2
+  exit 1
+fi
+
+if [ ! -s "$INSTALL_DIR/data/tls/fullchain.pem" ] || [ ! -s "$INSTALL_DIR/data/tls/privkey.pem" ]; then
+  echo "TLS certificates are missing." >&2
+  echo "Copy them to:" >&2
+  echo "  ${INSTALL_DIR}/data/tls/fullchain.pem" >&2
+  echo "  ${INSTALL_DIR}/data/tls/privkey.pem" >&2
+  echo "Then run this command again." >&2
+  exit 1
+fi
+
+env_file="$INSTALL_DIR/.env"
+proxy_image="${proxy_image:-$(env_value "$env_file" HTTPS_PROXY_IMAGE)}"
+proxy_image="${proxy_image:-$HTTPS_PROXY_IMAGE_DEFAULT}"
+
+set_env_value "$env_file" ONYXIO_ENABLE_HTTPS true
+set_env_value "$env_file" HTTPS_HOST "$host"
+set_env_value "$env_file" HTTPS_LISTEN_ADDR "$listen_address"
+set_env_value "$env_file" HTTPS_PORT "$port"
+set_env_value "$env_file" HTTPS_PROXY_IMAGE "$proxy_image"
+set_env_value "$env_file" MOBILE_APP_PUBLIC_URL "https://${host}/mobile/"
+
+cd "$INSTALL_DIR"
+compose -f docker-compose.yml -f docker-compose.https.yml up -d https-proxy
+
+echo
+echo "Onyxio HTTPS proxy is running."
+echo "  Mobile HTTPS URL: https://${host}/mobile/"
+echo "  DNS/split DNS: ${host} -> ${listen_address}"
+echo "  Firewall: allow guest clients to ${listen_address} TCP ${port}"
+echo "  Admin setting: Settings > Interfaces > Mobile HTTPS URL = https://${host}/mobile/"
+EOF
+
+  chmod +x "$INSTALL_DIR/bin/enable-https"
 }
 
 write_env_file() {
@@ -481,6 +660,11 @@ wait_for_onyxio_startup() {
 
 print_https_summary() {
   if ! https_configured; then
+    echo
+    echo "HTTPS front door:"
+    echo "  Not activated yet. After onboarding sets the final interface IP, run:"
+    echo "    sudo ${INSTALL_DIR}/bin/enable-https --host <mobile-host> --listen-address <interface-ip> --port 443"
+    echo "  Admin shows the exact command in Settings > Interfaces once Mobile HTTPS URL and interface roles are set."
     return
   fi
 
@@ -495,7 +679,7 @@ print_https_summary() {
   echo "HTTPS front door:"
   echo "  DNS/split DNS: ${https_host} -> ${listen_addr}"
   echo "  Firewall: allow guest clients to ${listen_addr} TCP ${https_port}"
-  echo "  Admin setting: Settings > Network > Mobile HTTPS URL = https://${https_host}/mobile/"
+  echo "  Admin setting: Settings > Interfaces > Mobile HTTPS URL = https://${https_host}/mobile/"
 
   if tls_certificates_available; then
     echo "  Proxy: running via docker-compose.https.yml"
@@ -505,8 +689,8 @@ print_https_summary() {
     echo "  Put certificates at:"
     echo "    ${INSTALL_DIR}/data/tls/fullchain.pem"
     echo "    ${INSTALL_DIR}/data/tls/privkey.pem"
-    echo "  Then start nginx with:"
-    echo "    cd ${INSTALL_DIR} && docker compose -f docker-compose.yml -f docker-compose.https.yml up -d"
+    echo "  Then activate HTTPS with:"
+    echo "    sudo ${INSTALL_DIR}/bin/enable-https --host ${https_host} --listen-address ${listen_addr} --port ${https_port}"
   fi
 }
 
@@ -536,6 +720,7 @@ main() {
 
   write_compose_file
   write_https_files
+  write_enable_https_script
   write_env_file "$server_ip"
   configure_https_env "$server_ip" "$env_created"
   docker_login_if_needed
