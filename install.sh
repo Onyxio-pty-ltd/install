@@ -235,8 +235,10 @@ services:
     image: ${ONYXIO_SERVER_IMAGE}
     restart: unless-stopped
     network_mode: host
+    pid: host
     cap_add:
       - NET_ADMIN
+      - SYS_ADMIN
     depends_on:
       postgres:
         condition: service_healthy
@@ -248,6 +250,7 @@ services:
       WEB_SOCKET_PORT: ${WEB_SOCKET_PORT:-8081}
       PHILIPS_WEBSERVICES_PORT: ${PHILIPS_WEBSERVICES_PORT:-8080}
       PHILIPS_WEBSERVICES_BOOTSTRAP_PORT: ${PHILIPS_WEBSERVICES_BOOTSTRAP_PORT:-80}
+      ONYXIO_NETPLAN_COMMAND_MODE: ${ONYXIO_NETPLAN_COMMAND_MODE:-host-nsenter}
     volumes:
       - ./data/uploads:/app/backend/uploads
       - /etc/netplan:/etc/netplan
@@ -496,6 +499,9 @@ write_env_file() {
     if ! grep -q '^ONYXIO_NETWORK_APPLY_MODE=' "$INSTALL_DIR/.env"; then
       printf '\nONYXIO_NETWORK_APPLY_MODE=netplan\n' >> "$INSTALL_DIR/.env"
     fi
+    if ! grep -q '^ONYXIO_NETPLAN_COMMAND_MODE=' "$INSTALL_DIR/.env"; then
+      printf '\nONYXIO_NETPLAN_COMMAND_MODE=host-nsenter\n' >> "$INSTALL_DIR/.env"
+    fi
     return
   fi
 
@@ -521,6 +527,7 @@ WEB_SOCKET_PORT=8081
 PHILIPS_WEBSERVICES_PORT=8080
 PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
 ONYXIO_NETWORK_APPLY_MODE=netplan
+ONYXIO_NETPLAN_COMMAND_MODE=host-nsenter
 
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${postgres_password}
