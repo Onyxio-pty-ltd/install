@@ -235,6 +235,8 @@ services:
     image: ${ONYXIO_SERVER_IMAGE}
     restart: unless-stopped
     network_mode: host
+    cap_add:
+      - NET_ADMIN
     depends_on:
       postgres:
         condition: service_healthy
@@ -248,6 +250,7 @@ services:
       PHILIPS_WEBSERVICES_BOOTSTRAP_PORT: ${PHILIPS_WEBSERVICES_BOOTSTRAP_PORT:-80}
     volumes:
       - ./data/uploads:/app/backend/uploads
+      - /etc/netplan:/etc/netplan
 EOF
 }
 
