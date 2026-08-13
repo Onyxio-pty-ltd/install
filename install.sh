@@ -491,6 +491,9 @@ write_env_file() {
   local server_ip="$1"
   if [ -f "$INSTALL_DIR/.env" ]; then
     echo "Existing ${INSTALL_DIR}/.env found; keeping existing configuration."
+    if ! grep -q '^ONYXIO_NETWORK_APPLY_MODE=' "$INSTALL_DIR/.env"; then
+      printf '\nONYXIO_NETWORK_APPLY_MODE=netplan\n' >> "$INSTALL_DIR/.env"
+    fi
     return
   fi
 
@@ -515,6 +518,7 @@ PORT=4000
 WEB_SOCKET_PORT=8081
 PHILIPS_WEBSERVICES_PORT=8080
 PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
+ONYXIO_NETWORK_APPLY_MODE=netplan
 
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${postgres_password}
