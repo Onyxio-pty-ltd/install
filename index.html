@@ -251,6 +251,8 @@ services:
     volumes:
       - ./data/uploads:/app/backend/uploads
       - /etc/netplan:/etc/netplan
+      - /run/systemd:/run/systemd
+      - /run/dbus:/run/dbus
 EOF
 }
 
