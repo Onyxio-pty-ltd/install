@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,6 +15,22 @@ PORT = int(os.environ.get("ONYXIO_NETWORK_AGENT_PORT", "8097"))
 NETPLAN_FILE = Path(os.environ.get("ONYXIO_NETPLAN_FILE", "/etc/netplan/99-onyxio.yaml"))
 MAX_BODY_BYTES = 1_000_000
 INTERFACE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
+STATUS_LOCK = threading.Lock()
+STATUS = {
+    "ok": True,
+    "service": "onyxio-network-agent",
+    "netplanFile": str(NETPLAN_FILE),
+    "applyInProgress": False,
+    "state": "idle",
+    "lastAttemptAt": None,
+    "lastCompletedAt": None,
+    "lastSuccessAt": None,
+    "lastError": None,
+    "lastReason": None,
+    "lastTargets": [],
+    "rollbackTimeoutMs": None,
+    "connectivityPollMs": None,
+}
 
 
 def json_response(handler, status, payload):
@@ -23,6 +40,60 @@ def json_response(handler, status, payload):
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def now_iso():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def get_status():
+    with STATUS_LOCK:
+        return dict(STATUS)
+
+
+def mark_apply_started(payload):
+    with STATUS_LOCK:
+        STATUS.update(
+            {
+                "applyInProgress": True,
+                "state": "applying",
+                "lastAttemptAt": now_iso(),
+                "lastCompletedAt": None,
+                "lastError": None,
+                "lastReason": None,
+                "lastTargets": payload["targets"],
+                "rollbackTimeoutMs": payload["rollbackTimeoutMs"],
+                "connectivityPollMs": payload["connectivityPollMs"],
+            }
+        )
+
+
+def mark_apply_succeeded():
+    completed_at = now_iso()
+    with STATUS_LOCK:
+        STATUS.update(
+            {
+                "applyInProgress": False,
+                "state": "succeeded",
+                "lastCompletedAt": completed_at,
+                "lastSuccessAt": completed_at,
+                "lastError": None,
+                "lastReason": None,
+            }
+        )
+
+
+def mark_apply_failed(error):
+    with STATUS_LOCK:
+        STATUS.update(
+            {
+                "applyInProgress": False,
+                "state": "failed",
+                "lastCompletedAt": now_iso(),
+                "lastError": str(error),
+                "lastReason": "apply_failed",
+            }
+        )
 
 
 def run(command, timeout=60):
@@ -162,6 +233,7 @@ def parse_int(value, fallback):
 
 
 def apply_network_settings(payload):
+    mark_apply_started(payload)
     previous_config = read_previous_config()
     try:
         write_netplan_config(payload["yaml"])
@@ -173,18 +245,26 @@ def apply_network_settings(payload):
         try:
             rollback(previous_config)
         except Exception as rollback_error:
-            raise RuntimeError(
+            wrapped_error = RuntimeError(
                 f"{error}; rollback also failed: {rollback_error}"
-            ) from rollback_error
-        raise RuntimeError(f"Network settings were rolled back: {error}") from error
+            )
+            mark_apply_failed(wrapped_error)
+            raise wrapped_error from rollback_error
+        wrapped_error = RuntimeError(f"Network settings were rolled back: {error}")
+        mark_apply_failed(wrapped_error)
+        raise wrapped_error from error
+    mark_apply_succeeded()
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/health":
-            json_response(self, 404, {"ok": False, "error": "not found"})
+        if self.path == "/health":
+            json_response(self, 200, {"ok": True, "service": "onyxio-network-agent"})
             return
-        json_response(self, 200, {"ok": True, "service": "onyxio-network-agent"})
+        if self.path == "/status":
+            json_response(self, 200, get_status())
+            return
+        json_response(self, 404, {"ok": False, "error": "not found"})
 
     def do_POST(self):
         if self.path != "/apply":

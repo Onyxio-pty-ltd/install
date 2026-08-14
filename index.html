@@ -172,6 +172,9 @@ require_clean_install_dir() {
 require_network_agent_dependencies() {
   local missing_packages=()
 
+  if ! command -v curl >/dev/null 2>&1; then
+    missing_packages+=(curl)
+  fi
   if ! command -v python3 >/dev/null 2>&1; then
     missing_packages+=(python3)
   fi
@@ -195,6 +198,33 @@ require_network_agent_dependencies() {
 
   echo "Missing host packages required for the Onyxio network agent: ${missing_packages[*]}" >&2
   echo "Install them, then run this installer again." >&2
+  exit 1
+}
+
+wait_for_network_agent() {
+  local url="http://127.0.0.1:8097/health"
+  local timeout_seconds=20
+  local deadline=$((SECONDS + timeout_seconds))
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      echo "Onyxio host network agent is running."
+      return
+    fi
+
+    if ! systemctl is-active --quiet onyxio-network-agent.service; then
+      echo "Onyxio network agent failed to start." >&2
+      systemctl status onyxio-network-agent.service --no-pager >&2 || true
+      journalctl -u onyxio-network-agent.service -n 80 --no-pager >&2 || true
+      exit 1
+    fi
+
+    sleep 1
+  done
+
+  echo "Onyxio network agent started, but did not become ready within ${timeout_seconds} seconds." >&2
+  systemctl status onyxio-network-agent.service --no-pager >&2 || true
+  journalctl -u onyxio-network-agent.service -n 80 --no-pager >&2 || true
   exit 1
 }
 
@@ -242,12 +272,7 @@ EOF
   systemctl daemon-reload
   systemctl enable --now onyxio-network-agent.service >/dev/null
   systemctl restart onyxio-network-agent.service
-
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsS http://127.0.0.1:8097/health >/dev/null ||
-      echo "Onyxio network agent started, but health check did not respond yet."
-  fi
-  echo "Onyxio host network agent is running."
+  wait_for_network_agent
 }
 
 prompt_server_ip() {
