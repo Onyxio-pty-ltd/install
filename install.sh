@@ -161,6 +161,14 @@ require_docker() {
   fi
 }
 
+require_clean_install_dir() {
+  if [ -f "$INSTALL_DIR/.env" ]; then
+    echo "Onyxio is already installed at ${INSTALL_DIR}." >&2
+    echo "Run ${INSTALL_DIR}/uninstall.sh first, or choose a different ONYXIO_INSTALL_DIR." >&2
+    exit 1
+  fi
+}
+
 require_network_agent_dependencies() {
   local missing_packages=()
 
@@ -567,13 +575,6 @@ EOF
 }
 
 write_lifecycle_scripts() {
-  cat > "$INSTALL_DIR/upgrade.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | bash -s -- "$@"
-EOF
-  chmod +x "$INSTALL_DIR/upgrade.sh"
-
   cat > "$INSTALL_DIR/uninstall.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -585,16 +586,9 @@ EOF
 write_env_file() {
   local server_ip="$1"
   if [ -f "$INSTALL_DIR/.env" ]; then
-    echo "Existing ${INSTALL_DIR}/.env found; keeping existing configuration."
-    if ! grep -q '^ONYXIO_NETWORK_APPLY_MODE=' "$INSTALL_DIR/.env"; then
-      printf '\nONYXIO_NETWORK_APPLY_MODE=agent\n' >> "$INSTALL_DIR/.env"
-    else
-      set_env_value "$INSTALL_DIR/.env" ONYXIO_NETWORK_APPLY_MODE agent
-    fi
-    if ! grep -q '^ONYXIO_NETWORK_AGENT_URL=' "$INSTALL_DIR/.env"; then
-      printf '\nONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097\n' >> "$INSTALL_DIR/.env"
-    fi
-    return
+    echo "Onyxio is already installed at ${INSTALL_DIR}." >&2
+    echo "Run ${INSTALL_DIR}/uninstall.sh first, or choose a different ONYXIO_INSTALL_DIR." >&2
+    exit 1
   fi
 
   local postgres_password jwt_secret
@@ -813,6 +807,7 @@ print_philips_bootstrap_summary() {
 main() {
   require_root
   require_docker
+  require_clean_install_dir
   require_network_agent_dependencies
 
   mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
@@ -820,10 +815,7 @@ main() {
   install_license_public_key
   local server_ip
   server_ip="$(prompt_server_ip)"
-  local env_created="false"
-  if [ ! -f "$INSTALL_DIR/.env" ]; then
-    env_created="true"
-  fi
+  local env_created="true"
 
   write_compose_file
   write_https_files
