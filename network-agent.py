@@ -158,6 +158,30 @@ def get_ipv4_addresses(interface_name):
     return addresses
 
 
+def reconcile_static_addresses(targets):
+    desired_by_interface = {}
+    for target in targets:
+        if target["mode"] != "static":
+            continue
+        desired_by_interface.setdefault(target["interfaceName"], set()).add(
+            str(ipaddress.ip_interface(target["address"]))
+        )
+
+    for interface_name, desired_addresses in desired_by_interface.items():
+        for address in get_ipv4_addresses(interface_name):
+            if address in desired_addresses:
+                continue
+            remove_ipv4_address(interface_name, address)
+
+
+def remove_ipv4_address(interface_name, address):
+    try:
+        run(["ip", "addr", "del", address, "dev", interface_name], timeout=10)
+    except RuntimeError as error:
+        if "Cannot assign requested address" not in str(error):
+            raise
+
+
 def target_is_ready(target):
     addresses = get_ipv4_addresses(target["interfaceName"])
     if target["mode"] == "dhcp":
@@ -241,6 +265,7 @@ def apply_network_settings(payload):
         wait_for_targets(
             payload["targets"], payload["rollbackTimeoutMs"], payload["connectivityPollMs"]
         )
+        reconcile_static_addresses(payload["targets"])
     except Exception as error:
         try:
             rollback(previous_config)
