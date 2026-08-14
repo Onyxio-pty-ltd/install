@@ -235,7 +235,6 @@ Type=simple
 Environment=ONYXIO_NETWORK_AGENT_HOST=127.0.0.1
 Environment=ONYXIO_NETWORK_AGENT_PORT=8097
 Environment=ONYXIO_NETPLAN_FILE=/etc/netplan/99-onyxio.yaml
-Environment=ONYXIO_NETPLAN_LEGACY_FILE=/etc/netplan/90-onyxio-managed.yaml
 ExecStart=/usr/bin/env python3 ${INSTALL_DIR}/network-agent/agent.py
 Restart=on-failure
 RestartSec=3
@@ -252,10 +251,7 @@ EOF
   echo "Onyxio host network agent is running."
 }
 
-remove_old_network_env() {
-  if grep -q '^ONYXIO_NETPLAN_COMMAND_MODE=' "$INSTALL_DIR/.env"; then
-    sed -i.bak '/^ONYXIO_NETPLAN_COMMAND_MODE=/d' "$INSTALL_DIR/.env"
-  fi
+configure_network_agent_env() {
   set_env_value "$INSTALL_DIR/.env" ONYXIO_NETWORK_APPLY_MODE agent
   set_env_value "$INSTALL_DIR/.env" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
 }
@@ -391,7 +387,7 @@ main() {
   require_network_agent_dependencies
   require_install
   install_network_agent
-  remove_old_network_env
+  configure_network_agent_env
   docker_login_if_requested
 
   cd "$INSTALL_DIR"

@@ -221,7 +221,6 @@ Type=simple
 Environment=ONYXIO_NETWORK_AGENT_HOST=127.0.0.1
 Environment=ONYXIO_NETWORK_AGENT_PORT=8097
 Environment=ONYXIO_NETPLAN_FILE=/etc/netplan/99-onyxio.yaml
-Environment=ONYXIO_NETPLAN_LEGACY_FILE=/etc/netplan/90-onyxio-managed.yaml
 ExecStart=/usr/bin/env python3 ${INSTALL_DIR}/network-agent/agent.py
 Restart=on-failure
 RestartSec=3
@@ -587,9 +586,6 @@ write_env_file() {
   local server_ip="$1"
   if [ -f "$INSTALL_DIR/.env" ]; then
     echo "Existing ${INSTALL_DIR}/.env found; keeping existing configuration."
-    if grep -q '^ONYXIO_NETPLAN_COMMAND_MODE=' "$INSTALL_DIR/.env"; then
-      sed -i.bak '/^ONYXIO_NETPLAN_COMMAND_MODE=/d' "$INSTALL_DIR/.env"
-    fi
     if ! grep -q '^ONYXIO_NETWORK_APPLY_MODE=' "$INSTALL_DIR/.env"; then
       printf '\nONYXIO_NETWORK_APPLY_MODE=agent\n' >> "$INSTALL_DIR/.env"
     else

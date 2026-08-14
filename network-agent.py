@@ -12,9 +12,6 @@ from pathlib import Path
 HOST = os.environ.get("ONYXIO_NETWORK_AGENT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("ONYXIO_NETWORK_AGENT_PORT", "8097"))
 NETPLAN_FILE = Path(os.environ.get("ONYXIO_NETPLAN_FILE", "/etc/netplan/99-onyxio.yaml"))
-LEGACY_NETPLAN_FILE = Path(
-    os.environ.get("ONYXIO_NETPLAN_LEGACY_FILE", "/etc/netplan/90-onyxio-managed.yaml")
-)
 MAX_BODY_BYTES = 1_000_000
 INTERFACE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
 
@@ -49,8 +46,6 @@ def write_netplan_config(content):
     tmp_path.chmod(0o600)
     tmp_path.replace(NETPLAN_FILE)
     NETPLAN_FILE.chmod(0o600)
-    if LEGACY_NETPLAN_FILE.exists():
-        LEGACY_NETPLAN_FILE.chmod(0o600)
 
 
 def remove_netplan_config():
