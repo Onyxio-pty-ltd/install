@@ -202,12 +202,13 @@ require_network_agent_dependencies() {
 }
 
 wait_for_network_agent() {
-  local url="http://127.0.0.1:8097/health"
+  local health_url="http://127.0.0.1:8097/health"
+  local status_url="http://127.0.0.1:8097/status"
   local timeout_seconds=20
   local deadline=$((SECONDS + timeout_seconds))
 
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if curl -fsS "$health_url" >/dev/null 2>&1 && curl -fsS "$status_url" >/dev/null 2>&1; then
       echo "Onyxio host network agent is running."
       return
     fi

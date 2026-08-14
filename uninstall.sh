@@ -179,9 +179,10 @@ remove_network_agent() {
 
   systemctl disable --now onyxio-network-agent.service >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/onyxio-network-agent.service
+  rm -rf "$INSTALL_DIR/network-agent"
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl reset-failed onyxio-network-agent.service >/dev/null 2>&1 || true
-  echo "Removed Onyxio host network agent service."
+  echo "Removed Onyxio host network agent service and files."
 }
 
 remove_images() {
