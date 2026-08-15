@@ -4,73 +4,106 @@ set -euo pipefail
 INSTALL_DIR="${ONYXIO_INSTALL_DIR:-/opt/onyxio}"
 VERSION="${ONYXIO_VERSION:-latest}"
 SERVER_IMAGE="${ONYXIO_SERVER_IMAGE:-ghcr.io/onyxio-pty-ltd/server:${VERSION}}"
-POSTGRES_IMAGE="${ONYXIO_POSTGRES_IMAGE:-postgres:15}"
-HTTPS_PROXY_IMAGE="${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
 REGISTRY="${ONYXIO_REGISTRY:-ghcr.io}"
 REGISTRY_USERNAME="${ONYXIO_REGISTRY_USERNAME:-}"
 REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
+SKIP_BACKUP="${ONYXIO_SKIP_UPGRADE_BACKUP:-false}"
+SKIP_HOST_REFRESH="${ONYXIO_SKIP_HOST_REFRESH:-false}"
+VERSION_EXPLICIT="false"
 
-prompt() {
-  local message="$1"
-  local default_value="${2:-}"
-  local value=""
+if [ -n "${ONYXIO_VERSION:-}" ]; then
+  VERSION_EXPLICIT="true"
+fi
 
-  if [ -r /dev/tty ]; then
-    if [ -n "$default_value" ]; then
-      read -r -p "${message} [${default_value}]: " value </dev/tty
-      echo "${value:-$default_value}"
-    else
-      read -r -p "${message}: " value </dev/tty
-      echo "$value"
-    fi
-    return
-  fi
+usage() {
+  cat <<'EOF'
+Usage: upgrade.sh [options]
 
-  if [ -n "$default_value" ]; then
-    echo "$default_value"
-    return
-  fi
+Upgrades an existing Onyxio install by refreshing host support files, pulling a
+new server image, and recreating the Onyxio backend container. Persistent
+Postgres data, uploads, TLS files, and local config are kept.
 
-  echo "Cannot prompt for ${message}; provide it as an environment variable." >&2
-  return 1
+Options:
+  --version VERSION       Image tag to install. Defaults to ONYXIO_VERSION or latest.
+  --image IMAGE           Full server image reference. Overrides --version.
+  --install-dir PATH      Install directory. Defaults to /opt/onyxio.
+  --skip-backup           Skip the pre-upgrade pg_dump backup.
+  --skip-host-refresh     Do not update compose files, helpers, or network agent.
+  -h, --help              Show this help.
+
+Environment:
+  ONYXIO_INSTALL_DIR=/opt/onyxio
+  ONYXIO_VERSION=2026.08.15
+  ONYXIO_SERVER_IMAGE=ghcr.io/onyxio-pty-ltd/server:2026.08.15
+  ONYXIO_REGISTRY=ghcr.io
+  ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME
+  ONYXIO_REGISTRY_TOKEN=TOKEN
+  ONYXIO_SKIP_UPGRADE_BACKUP=true
+  ONYXIO_SKIP_HOST_REFRESH=true
+EOF
 }
 
-prompt_secret() {
-  local message="$1"
-  local value=""
-
-  if [ -r /dev/tty ]; then
-    read -r -s -p "${message}: " value </dev/tty
-    echo >&2
-    echo "$value"
-    return
-  fi
-
-  echo "Cannot prompt for ${message}; provide it as an environment variable." >&2
-  return 1
-}
-
-prompt_yes_no() {
-  local message="$1"
-  local default_value="${2:-n}"
-  local value=""
-
-  if [ ! -r /dev/tty ]; then
-    echo "$default_value"
-    return
-  fi
-
-  read -r -p "${message} [${default_value}]: " value </dev/tty
-  value="${value:-$default_value}"
-  case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
-    y | yes | true | 1)
-      echo "y"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version)
+      if [ "$#" -lt 2 ]; then
+        echo "--version requires a value." >&2
+        exit 1
+      fi
+      VERSION="$2"
+      SERVER_IMAGE="ghcr.io/onyxio-pty-ltd/server:${VERSION}"
+      VERSION_EXPLICIT="true"
+      shift 2
+      ;;
+    --version=*)
+      VERSION="${1#*=}"
+      SERVER_IMAGE="ghcr.io/onyxio-pty-ltd/server:${VERSION}"
+      VERSION_EXPLICIT="true"
+      shift
+      ;;
+    --image)
+      if [ "$#" -lt 2 ]; then
+        echo "--image requires a value." >&2
+        exit 1
+      fi
+      SERVER_IMAGE="$2"
+      shift 2
+      ;;
+    --image=*)
+      SERVER_IMAGE="${1#*=}"
+      shift
+      ;;
+    --install-dir)
+      if [ "$#" -lt 2 ]; then
+        echo "--install-dir requires a path." >&2
+        exit 1
+      fi
+      INSTALL_DIR="$2"
+      shift 2
+      ;;
+    --install-dir=*)
+      INSTALL_DIR="${1#*=}"
+      shift
+      ;;
+    --skip-backup)
+      SKIP_BACKUP="true"
+      shift
+      ;;
+    --skip-host-refresh)
+      SKIP_HOST_REFRESH="true"
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
       ;;
     *)
-      echo "n"
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
       ;;
   esac
-}
+done
 
 compose() {
   if docker compose version >/dev/null 2>&1; then
@@ -83,16 +116,26 @@ compose() {
   fi
 }
 
-random_secret() {
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 32
-  else
-    date +%s%N | sha256sum | awk '{print $1}'
-  fi
+env_value() {
+  local file="$1"
+  local key="$2"
+  grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
 }
 
-detect_ips() {
-  hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' || true
+derive_image_tag() {
+  local image="$1"
+  local tag
+
+  case "$image" in
+    *@*)
+      return
+      ;;
+  esac
+
+  tag="${image##*:}"
+  if [ "$tag" != "$image" ] && [ -n "$tag" ] && [ "${tag#*/}" = "$tag" ]; then
+    printf '%s\n' "$tag"
+  fi
 }
 
 set_env_value() {
@@ -121,50 +164,44 @@ set_env_value() {
   fi
 }
 
-env_value() {
+set_env_default() {
   local file="$1"
   local key="$2"
-  grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
-}
+  local value="$3"
 
-install_license_public_key() {
-  local target="$INSTALL_DIR/data/uploads/license/public-key.pem"
-
-  if [ -s "$target" ]; then
-    echo "Existing Onyxio license public key found; keeping it."
-    return
+  if ! grep -q "^${key}=" "$file"; then
+    printf '%s=%s\n' "$key" "$value" >> "$file"
   fi
-
-  mkdir -p "$(dirname "$target")"
-  cat > "$target" <<'EOF'
------BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEArEdXtD7u5kZwxS4Rr5rBbr5pEr6qXT3PnO0cfGO7Ztw=
------END PUBLIC KEY-----
-EOF
-  chmod 0644 "$target"
-  echo "Installed Onyxio license public key."
 }
 
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
-    echo "Run this installer with sudo:" >&2
-    echo "  curl -fsSL https://install.onyxio.com.au | sudo bash" >&2
+    echo "Run this upgrader with sudo:" >&2
+    echo "  curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash" >&2
     exit 1
   fi
 }
 
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is required on this server before installing Onyxio." >&2
-    echo "Install Docker Engine and the Docker Compose plugin, then run this installer again." >&2
+    echo "Docker is required on this server before upgrading Onyxio." >&2
     exit 1
   fi
 }
 
-require_clean_install_dir() {
-  if [ -f "$INSTALL_DIR/.env" ]; then
-    echo "Onyxio is already installed at ${INSTALL_DIR}." >&2
-    echo "Run ${INSTALL_DIR}/uninstall.sh first, or choose a different ONYXIO_INSTALL_DIR." >&2
+require_install() {
+  if [ ! -d "$INSTALL_DIR" ]; then
+    echo "Install directory does not exist: ${INSTALL_DIR}" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$INSTALL_DIR/docker-compose.yml" ]; then
+    echo "Missing ${INSTALL_DIR}/docker-compose.yml; this does not look like an Onyxio install." >&2
+    exit 1
+  fi
+
+  if [ ! -f "$INSTALL_DIR/.env" ]; then
+    echo "Missing ${INSTALL_DIR}/.env; this does not look like an Onyxio install." >&2
     exit 1
   fi
 }
@@ -197,8 +234,26 @@ require_network_agent_dependencies() {
   fi
 
   echo "Missing host packages required for the Onyxio network agent: ${missing_packages[*]}" >&2
-  echo "Install them, then run this installer again." >&2
+  echo "Install them, then run this upgrader again." >&2
   exit 1
+}
+
+install_license_public_key() {
+  local target="$INSTALL_DIR/data/uploads/license/public-key.pem"
+
+  if [ -s "$target" ]; then
+    echo "Existing Onyxio license public key found; keeping it."
+    return
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  cat > "$target" <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEArEdXtD7u5kZwxS4Rr5rBbr5pEr6qXT3PnO0cfGO7Ztw=
+-----END PUBLIC KEY-----
+EOF
+  chmod 0644 "$target"
+  echo "Installed Onyxio license public key."
 }
 
 wait_for_network_agent() {
@@ -276,53 +331,21 @@ EOF
   wait_for_network_agent
 }
 
-prompt_server_ip() {
-  if [ -n "${SERVER_IP:-}" ]; then
-    echo "$SERVER_IP"
+docker_login_if_requested() {
+  if [ -z "$REGISTRY_TOKEN" ]; then
     return
   fi
 
-  echo "Choose the IP address TVs and phones should use to reach this server." >&2
-  detected_ips="$(detect_ips)"
-  if [ -n "$detected_ips" ]; then
-    i=1
-    while IFS= read -r ip; do
-      [ -z "$ip" ] && continue
-      if [ "$i" -eq 1 ]; then
-        default_ip="$ip"
-      fi
-      printf "  [%s] %s\n" "$i" "$ip" >&2
-      i=$((i + 1))
-    done <<EOF
-$detected_ips
-EOF
+  if [ -z "$REGISTRY_USERNAME" ]; then
+    echo "ONYXIO_REGISTRY_USERNAME is required when ONYXIO_REGISTRY_TOKEN is set." >&2
+    exit 1
+  fi
+
+  echo "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}..."
+  if command -v timeout >/dev/null 2>&1; then
+    printf '%s\n' "$REGISTRY_TOKEN" | timeout 60s docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
   else
-    default_ip="127.0.0.1"
-  fi
-
-  prompt "Server IP" "$default_ip"
-}
-
-docker_login_if_needed() {
-  if [ -z "$REGISTRY_TOKEN" ]; then
-    echo "ONYXIO_REGISTRY_TOKEN is not set."
-    REGISTRY_TOKEN="$(prompt_secret "Registry token for ${REGISTRY} (leave blank if image is public)")"
-  fi
-
-  if [ -n "$REGISTRY_TOKEN" ]; then
-    if [ -z "$REGISTRY_USERNAME" ]; then
-      REGISTRY_USERNAME="$(prompt "Registry username" "onyxio-pty-ltd")"
-    fi
-    if [ -z "$REGISTRY_USERNAME" ]; then
-      echo "Registry username is required when ONYXIO_REGISTRY_TOKEN is set." >&2
-      exit 1
-    fi
-    echo "Logging in to ${REGISTRY} as ${REGISTRY_USERNAME}..."
-    if command -v timeout >/dev/null 2>&1; then
-      printf '%s\n' "$REGISTRY_TOKEN" | timeout 60s docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
-    else
-      printf '%s\n' "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
-    fi
+    printf '%s\n' "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
   fi
 }
 
@@ -616,101 +639,42 @@ EOF
   chmod +x "$INSTALL_DIR/uninstall.sh"
 }
 
-write_env_file() {
-  local server_ip="$1"
-  if [ -f "$INSTALL_DIR/.env" ]; then
-    echo "Onyxio is already installed at ${INSTALL_DIR}." >&2
-    echo "Run ${INSTALL_DIR}/uninstall.sh first, or choose a different ONYXIO_INSTALL_DIR." >&2
-    exit 1
-  fi
-
-  local postgres_password jwt_secret
-  postgres_password="$(random_secret)"
-  jwt_secret="$(random_secret)"
-
-  cat > "$INSTALL_DIR/.env" <<EOF
-ONYXIO_VERSION=${VERSION}
-ONYXIO_SERVER_IMAGE=${SERVER_IMAGE}
-POSTGRES_IMAGE=${POSTGRES_IMAGE}
-
-SERVER_IP=${server_ip}
-PUBLIC_SERVER_URL=http://${server_ip}:4000
-PUBLIC_APP_URL=http://${server_ip}:4000
-PUBLIC_TV_APP_URL=http://${server_ip}:4000/tv/
-MOBILE_APP_PUBLIC_URL=http://${server_ip}:4000/mobile/
-PHILIPS_WEBSERVICES_PUBLIC_URL=http://${server_ip}/webservices.php
-PHILIPS_WEBSERVICES_BOOTSTRAP_PUBLIC_URL=http://${server_ip}
-
-PORT=4000
-WEB_SOCKET_PORT=8081
-PHILIPS_WEBSERVICES_PORT=8080
-PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
-ONYXIO_NETWORK_APPLY_MODE=agent
-ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
-
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=${postgres_password}
-POSTGRES_DB=onyxio
-POSTGRES_PORT=5432
-
-JWT_SECRET=${jwt_secret}
-GRAPHQL_BODY_LIMIT=150mb
-
-ONYXIO_LICENSE_DIR=/app/backend/uploads/license
-ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
-ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
-EOF
-}
-
-configure_https_env() {
-  local server_ip="$1"
-  local allow_prompt="${2:-false}"
-  local env_file="$INSTALL_DIR/.env"
-  local enable_https="${ONYXIO_ENABLE_HTTPS:-}"
-
-  if [ -z "$enable_https" ] && grep -q '^ONYXIO_ENABLE_HTTPS=true' "$env_file" 2>/dev/null; then
-    enable_https="true"
-  fi
-
-  if [ -z "$enable_https" ] && [ "$allow_prompt" = "true" ]; then
-    enable_https="$(prompt_yes_no "Configure optional HTTPS front door for mobile AI now?" "n")"
-  fi
-
-  case "$(printf '%s' "$enable_https" | tr '[:upper:]' '[:lower:]')" in
+refresh_host_files() {
+  case "$(printf '%s' "$SKIP_HOST_REFRESH" | tr '[:upper:]' '[:lower:]')" in
     y | yes | true | 1)
-      ;;
-    *)
+      echo "Skipping host support refresh because ONYXIO_SKIP_HOST_REFRESH is enabled."
       return
       ;;
   esac
 
-  local https_host listen_addr https_port proxy_image
-  https_host="${HTTPS_HOST:-$(env_value "$env_file" HTTPS_HOST)}"
-  if [ -z "$https_host" ]; then
-    https_host="$(prompt "HTTPS hostname for guest phones" "")"
-  fi
-  if [ -z "$https_host" ]; then
-    echo "HTTPS was requested but no HTTPS_HOST was provided; skipping HTTPS proxy setup." >&2
-    return
-  fi
-
-  listen_addr="${HTTPS_LISTEN_ADDR:-$(env_value "$env_file" HTTPS_LISTEN_ADDR)}"
-  listen_addr="${listen_addr:-$server_ip}"
-  https_port="${HTTPS_PORT:-$(env_value "$env_file" HTTPS_PORT)}"
-  https_port="${https_port:-443}"
-  proxy_image="${HTTPS_PROXY_IMAGE:-$(env_value "$env_file" HTTPS_PROXY_IMAGE)}"
-  proxy_image="${proxy_image:-$HTTPS_PROXY_IMAGE}"
-
-  set_env_value "$env_file" ONYXIO_ENABLE_HTTPS true
-  set_env_value "$env_file" HTTPS_HOST "$https_host"
-  set_env_value "$env_file" HTTPS_LISTEN_ADDR "$listen_addr"
-  set_env_value "$env_file" HTTPS_PORT "$https_port"
-  set_env_value "$env_file" HTTPS_PROXY_IMAGE "$proxy_image"
-  set_env_value "$env_file" MOBILE_APP_PUBLIC_URL "https://${https_host}/mobile/"
+  echo "Refreshing host support files."
+  require_network_agent_dependencies
+  mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
+  install_network_agent
+  install_license_public_key
+  write_compose_file
+  write_https_files
+  write_enable_https_script
+  write_lifecycle_scripts
 }
 
-tls_certificates_available() {
-  [ -s "$INSTALL_DIR/data/tls/fullchain.pem" ] && [ -s "$INSTALL_DIR/data/tls/privkey.pem" ]
+ensure_env_defaults() {
+  local env_file="$INSTALL_DIR/.env"
+
+  set_env_default "$env_file" POSTGRES_IMAGE "${ONYXIO_POSTGRES_IMAGE:-postgres:15}"
+  set_env_default "$env_file" HTTPS_PROXY_IMAGE "${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
+  set_env_default "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
+  set_env_default "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
+  set_env_default "$env_file" GRAPHQL_BODY_LIMIT 150mb
+  set_env_default "$env_file" ONYXIO_LICENSE_DIR /app/backend/uploads/license
+  set_env_default "$env_file" ONYXIO_LICENSE_PUBLIC_KEY_FILE /app/backend/uploads/license/public-key.pem
+}
+
+compose_files() {
+  printf '%s\n' "-f" "docker-compose.yml"
+  if https_configured && tls_certificates_available; then
+    printf '%s\n' "-f" "docker-compose.https.yml"
+  fi
 }
 
 https_configured() {
@@ -719,23 +683,48 @@ https_configured() {
     [ -f "$INSTALL_DIR/docker-compose.https.yml" ]
 }
 
-start_compose() {
-  if https_configured && tls_certificates_available; then
-    compose -f docker-compose.yml -f docker-compose.https.yml up -d
-    return
-  fi
-
-  compose -f docker-compose.yml up -d
+tls_certificates_available() {
+  [ -s "$INSTALL_DIR/data/tls/fullchain.pem" ] && [ -s "$INSTALL_DIR/data/tls/privkey.pem" ]
 }
 
-print_onyxio_startup_logs() {
-  echo
-  echo "Recent Onyxio backend logs:"
-  compose -f docker-compose.yml logs --tail=160 onyxio || true
+run_compose() {
+  local files
+  mapfile -t files < <(compose_files)
+  compose "${files[@]}" "$@"
+}
+
+backup_database() {
+  case "$(printf '%s' "$SKIP_BACKUP" | tr '[:upper:]' '[:lower:]')" in
+    y | yes | true | 1)
+      echo "Skipping database backup because ONYXIO_SKIP_UPGRADE_BACKUP is enabled."
+      return
+      ;;
+  esac
+
+  local backup_dir backup_file postgres_user postgres_db
+  backup_dir="$INSTALL_DIR/backups"
+  backup_file="$backup_dir/onyxio-$(date +%Y%m%d-%H%M%S).sql"
+  postgres_user="$(env_value "$INSTALL_DIR/.env" POSTGRES_USER)"
+  postgres_db="$(env_value "$INSTALL_DIR/.env" POSTGRES_DB)"
+  postgres_user="${postgres_user:-postgres}"
+  postgres_db="${postgres_db:-onyxio}"
+
+  mkdir -p "$backup_dir"
+  chmod 0700 "$backup_dir"
+
+  echo "Creating database backup: ${backup_file}"
+  if ! run_compose exec -T postgres pg_dump -U "$postgres_user" "$postgres_db" > "$backup_file"; then
+    rm -f "$backup_file"
+    echo "Database backup failed; upgrade aborted." >&2
+    echo "Use ONYXIO_SKIP_UPGRADE_BACKUP=true only if you have another verified backup." >&2
+    exit 1
+  fi
+
+  chmod 0600 "$backup_file"
 }
 
 wait_for_onyxio_startup() {
-  local timeout_seconds="${ONYXIO_INSTALL_STARTUP_TIMEOUT_SECONDS:-120}"
+  local timeout_seconds="${ONYXIO_UPGRADE_STARTUP_TIMEOUT_SECONDS:-120}"
   local port
   port="$(env_value "$INSTALL_DIR/.env" PORT)"
   port="${port:-4000}"
@@ -747,7 +736,7 @@ wait_for_onyxio_startup() {
 
   while [ $(( $(date +%s) - start_time )) -lt "$timeout_seconds" ]; do
     local container_id
-    container_id="$(compose -f docker-compose.yml ps -q onyxio 2>/dev/null || true)"
+    container_id="$(run_compose ps -q onyxio 2>/dev/null || true)"
 
     if [ -n "$container_id" ]; then
       local running restarting restart_count
@@ -765,14 +754,12 @@ wait_for_onyxio_startup() {
       fi
 
       if [ "$restarting" = "true" ] || [ "$restart_count" -gt "$initial_restart_count" ]; then
-        echo "Onyxio backend restarted during startup; install did not complete cleanly." >&2
-        print_onyxio_startup_logs >&2
+        echo "Onyxio backend restarted during startup; upgrade did not complete cleanly." >&2
         return 1
       fi
 
       if [ "$running" != "true" ]; then
-        echo "Onyxio backend container stopped during startup; install did not complete cleanly." >&2
-        print_onyxio_startup_logs >&2
+        echo "Onyxio backend container is not running." >&2
         return 1
       fi
 
@@ -786,110 +773,110 @@ wait_for_onyxio_startup() {
   done
 
   echo "Onyxio backend did not accept connections on port ${port} within ${timeout_seconds} seconds." >&2
-  print_onyxio_startup_logs >&2
   return 1
 }
 
-print_https_summary() {
-  if ! https_configured; then
-    echo
-    echo "HTTPS front door:"
-    echo "  Not activated yet. After onboarding sets the final interface IP, run:"
-    echo "    sudo ${INSTALL_DIR}/bin/enable-https --host <mobile-host> --listen-address <interface-ip> --port 443"
-    echo "  Admin shows the exact command in Settings > Interfaces once Mobile HTTPS URL and interface roles are set."
-    return
-  fi
-
-  local env_file="$INSTALL_DIR/.env"
-  local https_host listen_addr https_port
-  https_host="$(env_value "$env_file" HTTPS_HOST)"
-  listen_addr="$(env_value "$env_file" HTTPS_LISTEN_ADDR)"
-  https_port="$(env_value "$env_file" HTTPS_PORT)"
-  https_port="${https_port:-443}"
-
+print_logs() {
   echo
-  echo "HTTPS front door:"
-  echo "  DNS/split DNS: ${https_host} -> ${listen_addr}"
-  echo "  Firewall: allow guest clients to ${listen_addr} TCP ${https_port}"
-  echo "  Admin setting: Settings > Interfaces > Mobile HTTPS URL = https://${https_host}/mobile/"
-
-  if tls_certificates_available; then
-    echo "  Proxy: running via docker-compose.https.yml"
-    echo "  Mobile HTTPS: https://${https_host}/mobile/"
-  else
-    echo "  Proxy: not started because TLS files are missing."
-    echo "  Put certificates at:"
-    echo "    ${INSTALL_DIR}/data/tls/fullchain.pem"
-    echo "    ${INSTALL_DIR}/data/tls/privkey.pem"
-    echo "  Then activate HTTPS with:"
-    echo "    sudo ${INSTALL_DIR}/bin/enable-https --host ${https_host} --listen-address ${listen_addr} --port ${https_port}"
-  fi
+  echo "Recent Onyxio backend logs:"
+  run_compose logs --tail=160 onyxio || true
 }
 
-print_philips_bootstrap_summary() {
-  local server_ip="$1"
+print_rollback_instructions() {
+  local previous_version="$1"
+  local previous_image="$2"
 
   echo
-  echo "Philips first-run bootstrap:"
-  echo "  DNS record / local DNS override: web.services.tpvision.htv -> ${server_ip}"
-  echo "  TV request handled by Onyxio: http://web.services.tpvision.htv/webservices.php"
-  echo "  Direct test URL: http://${server_ip}/webservices.php"
-  echo "  Firewall: allow Philips TVs to ${server_ip} TCP 80"
+  echo "Rollback commands:"
+  echo "  cd ${INSTALL_DIR}"
+  echo "  sudo sed -i.bak 's#^ONYXIO_VERSION=.*#ONYXIO_VERSION=${previous_version}#' .env"
+  echo "  sudo sed -i.bak 's#^ONYXIO_SERVER_IMAGE=.*#ONYXIO_SERVER_IMAGE=${previous_image}#' .env"
+  echo "  docker compose pull onyxio"
+  if https_configured && tls_certificates_available; then
+    echo "  docker compose -f docker-compose.yml -f docker-compose.https.yml up -d onyxio https-proxy"
+  else
+    echo "  docker compose up -d onyxio"
+  fi
 }
 
 main() {
   require_root
   require_docker
-  require_clean_install_dir
-  require_network_agent_dependencies
-
-  mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
-  install_network_agent
-  install_license_public_key
-  local server_ip
-  server_ip="$(prompt_server_ip)"
-  local env_created="true"
-
-  write_compose_file
-  write_https_files
-  write_enable_https_script
-  write_lifecycle_scripts
-  write_env_file "$server_ip"
-  configure_https_env "$server_ip" "$env_created"
-  docker_login_if_needed
+  require_install
+  docker_login_if_requested
 
   cd "$INSTALL_DIR"
-  echo "Pulling Onyxio images..."
-  compose -f docker-compose.yml pull
-  if https_configured; then
-    docker pull "$(env_value "$INSTALL_DIR/.env" HTTPS_PROXY_IMAGE)"
+
+  if [ "$VERSION_EXPLICIT" != "true" ]; then
+    local derived_version
+    derived_version="$(derive_image_tag "$SERVER_IMAGE")"
+    if [ -n "$derived_version" ]; then
+      VERSION="$derived_version"
+    fi
   fi
-  echo "Starting Onyxio..."
-  start_compose
-  wait_for_onyxio_startup
+
+  local env_file previous_version previous_image
+  env_file="$INSTALL_DIR/.env"
+  previous_version="$(env_value "$env_file" ONYXIO_VERSION)"
+  previous_image="$(env_value "$env_file" ONYXIO_SERVER_IMAGE)"
+  previous_version="${previous_version:-unknown}"
+  previous_image="${previous_image:-ghcr.io/onyxio-pty-ltd/server:${previous_version}}"
+
+  echo "Current Onyxio image: ${previous_image}"
+  echo "Target Onyxio image:  ${SERVER_IMAGE}"
+
+  if [ "$previous_image" = "$SERVER_IMAGE" ]; then
+    echo "Target image matches the current image. Pulling anyway in case the tag moved."
+  fi
+
+  refresh_host_files
+  ensure_env_defaults
+  backup_database
+
+  set_env_value "$env_file" ONYXIO_VERSION "$VERSION"
+  set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$SERVER_IMAGE"
+
+  echo "Pulling target image."
+  if ! run_compose pull onyxio; then
+    set_env_value "$env_file" ONYXIO_VERSION "$previous_version"
+    set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$previous_image"
+    echo "Image pull failed; restored previous image settings." >&2
+    exit 1
+  fi
+
+  if https_configured; then
+    docker pull "$(env_value "$env_file" HTTPS_PROXY_IMAGE)" || true
+  fi
+
+  echo "Recreating Onyxio backend container."
+  if https_configured && tls_certificates_available; then
+    if ! run_compose up -d onyxio https-proxy; then
+      set_env_value "$env_file" ONYXIO_VERSION "$previous_version"
+      set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$previous_image"
+      echo "Container recreate failed; restored previous image settings." >&2
+      print_rollback_instructions "$previous_version" "$previous_image" >&2
+      exit 1
+    fi
+  elif ! run_compose up -d onyxio; then
+    set_env_value "$env_file" ONYXIO_VERSION "$previous_version"
+    set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$previous_image"
+    echo "Container recreate failed; restored previous image settings." >&2
+    print_rollback_instructions "$previous_version" "$previous_image" >&2
+    exit 1
+  fi
+
+  if ! wait_for_onyxio_startup; then
+    print_logs >&2
+    print_rollback_instructions "$previous_version" "$previous_image" >&2
+    exit 1
+  fi
 
   echo
-  echo "Onyxio is running."
-  echo "Admin:  http://${server_ip}:4000/"
-  echo "TV:     http://${server_ip}:4000/tv/"
-  echo "Mobile: http://${server_ip}:4000/mobile/"
-  echo "Philips WebServices: http://${server_ip}/webservices.php"
-  print_philips_bootstrap_summary "$server_ip"
-  print_https_summary
-  echo
-  echo "License activation:"
-  echo "  1. The Onyxio license public key is installed at ${INSTALL_DIR}/data/uploads/license/public-key.pem."
-  if grep -q '^ONYXIO_INSTALLATION_ID=onyxio-' "$INSTALL_DIR/.env"; then
-    echo "  2. This server is seeded with $(grep '^ONYXIO_INSTALLATION_ID=' "$INSTALL_DIR/.env" | cut -d= -f2-)."
-  else
-    echo "  2. Open Admin > Settings > License and copy the generated installation ID."
-  fi
-  echo "  3. Upload the signed license in Admin > Settings > License."
-  echo "TV and mobile apps stay locked until the license is valid."
-  echo
-  echo "Install directory: ${INSTALL_DIR}"
-  echo "View logs with:"
-  echo "  cd ${INSTALL_DIR} && docker compose logs -f onyxio"
+  echo "Onyxio upgrade complete."
+  echo "Previous image: ${previous_image}"
+  echo "Current image:  ${SERVER_IMAGE}"
+  echo "Host support files refreshed in ${INSTALL_DIR}."
+  print_rollback_instructions "$previous_version" "$previous_image"
 }
 
 main "$@"

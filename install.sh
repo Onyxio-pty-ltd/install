@@ -601,6 +601,13 @@ EOF
 }
 
 write_lifecycle_scripts() {
+  cat > "$INSTALL_DIR/upgrade.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | bash -s -- "$@"
+EOF
+  chmod +x "$INSTALL_DIR/upgrade.sh"
+
   cat > "$INSTALL_DIR/uninstall.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

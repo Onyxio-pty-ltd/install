@@ -14,6 +14,12 @@ Uninstall Onyxio:
 curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo bash
 ```
 
+Upgrade Onyxio:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
+```
+
 For a non-interactive lab reset:
 
 ```bash
@@ -65,6 +71,7 @@ The installer creates:
 - `/opt/onyxio/docker-compose.yml`
 - `/opt/onyxio/docker-compose.https.yml`
 - `/opt/onyxio/nginx/onyxio-https.conf.template`
+- `/opt/onyxio/upgrade.sh`
 - `/opt/onyxio/.env`
 - `/opt/onyxio/data/postgres`
 - `/opt/onyxio/data/uploads`
@@ -113,3 +120,55 @@ web.services.tpvision.htv -> <SERVER_IP>
 
 The TV will request `http://web.services.tpvision.htv/webservices.php`, which is
 served by the Onyxio WebServices API on TCP port 80.
+
+## Upgrades
+
+The upgrade script keeps persistent data in place, creates a Postgres backup
+under `/opt/onyxio/backups`, refreshes host support files such as Compose,
+HTTPS helper scripts, lifecycle wrappers, and the network agent, updates
+`ONYXIO_VERSION` and `ONYXIO_SERVER_IMAGE` in `/opt/onyxio/.env`, pulls the new
+backend image, and recreates the Onyxio container.
+
+Pinned version:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
+```
+
+Full image override:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_SERVER_IMAGE=ghcr.io/onyxio-pty-ltd/server:2026.08.15 \
+  bash
+```
+
+If the image is private, pass registry credentials:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_VERSION=2026.08.15 \
+  ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
+  ONYXIO_REGISTRY_TOKEN=TOKEN \
+  bash
+```
+
+The script prints rollback commands using the previous image tag after each
+upgrade. Skip the automatic database backup only when another verified backup
+already exists:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_VERSION=2026.08.15 \
+  ONYXIO_SKIP_UPGRADE_BACKUP=true \
+  bash
+```
+
+Host support refresh can be skipped for emergency image-only upgrades:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+  ONYXIO_VERSION=2026.08.15 \
+  ONYXIO_SKIP_HOST_REFRESH=true \
+  bash
+```
