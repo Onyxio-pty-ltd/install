@@ -71,6 +71,7 @@ The installer creates:
 - `/opt/onyxio/docker-compose.yml`
 - `/opt/onyxio/docker-compose.https.yml`
 - `/opt/onyxio/nginx/onyxio-https.conf.template`
+- `/opt/onyxio/bin/watchdog`
 - `/opt/onyxio/upgrade.sh`
 - `/opt/onyxio/.env`
 - `/opt/onyxio/data/postgres`
@@ -79,6 +80,46 @@ The installer creates:
 - `/opt/onyxio/data/tls`
 
 The server receives Docker images only. It does not receive Onyxio source code.
+
+## Crash Recovery
+
+Onyxio containers use Docker Compose `restart: unless-stopped`, so Docker will
+automatically relaunch the backend if the server process exits unexpectedly.
+
+The installer also enables `onyxio-watchdog.service`, a small host-level
+watchdog that runs `/opt/onyxio/bin/watchdog`. It checks the backend service
+every 30 seconds and runs `docker compose up -d onyxio` if the backend
+container disappears or stops. If the container is running but the backend stops
+accepting connections on `PORT`, the watchdog restarts it after three failed
+checks.
+
+Useful commands:
+
+```bash
+sudo systemctl status onyxio-watchdog.service
+sudo journalctl -u onyxio-watchdog.service -f
+sudo /opt/onyxio/bin/watchdog --once
+```
+
+To change the check interval:
+
+```bash
+sudo systemctl edit onyxio-watchdog.service
+```
+
+Then add:
+
+```ini
+[Service]
+Environment=ONYXIO_WATCHDOG_INTERVAL_SECONDS=10
+```
+
+To change how many failed connection checks are allowed before a restart:
+
+```ini
+[Service]
+Environment=ONYXIO_WATCHDOG_FAILURE_THRESHOLD=5
+```
 
 ## Source Repository Boundary
 
@@ -132,7 +173,7 @@ served by the Onyxio WebServices API on TCP port 80.
 
 The upgrade script keeps persistent data in place, creates a Postgres backup
 under `/opt/onyxio/backups`, refreshes host support files such as Compose,
-HTTPS helper scripts, lifecycle wrappers, and the network agent, updates
+HTTPS helper scripts, lifecycle wrappers, the watchdog, and the network agent, updates
 `ONYXIO_VERSION` and `ONYXIO_SERVER_IMAGE` in `/opt/onyxio/.env`, pulls the new
 backend image, and recreates the Onyxio container.
 

@@ -623,6 +623,53 @@ EOF
   chmod +x "$INSTALL_DIR/bin/enable-https"
 }
 
+write_watchdog_script() {
+  local source_dir watchdog_source
+  source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd || pwd)"
+  watchdog_source="$source_dir/watchdog.sh"
+
+  mkdir -p "$INSTALL_DIR/bin"
+  if [ -f "$watchdog_source" ]; then
+    cp "$watchdog_source" "$INSTALL_DIR/bin/watchdog"
+  else
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/watchdog.sh" \
+      -o "$INSTALL_DIR/bin/watchdog"
+  fi
+  chmod +x "$INSTALL_DIR/bin/watchdog"
+}
+
+install_watchdog_service() {
+  local service_file="/etc/systemd/system/onyxio-watchdog.service"
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemd is required for the Onyxio watchdog." >&2
+    exit 1
+  fi
+
+  cat > "$service_file" <<EOF
+[Unit]
+Description=Onyxio Server Watchdog
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=simple
+Environment=ONYXIO_INSTALL_DIR=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/bin/watchdog
+Restart=always
+RestartSec=10
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now onyxio-watchdog.service >/dev/null
+  systemctl restart onyxio-watchdog.service
+}
+
 write_lifecycle_scripts() {
   cat > "$INSTALL_DIR/upgrade.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -655,6 +702,7 @@ refresh_host_files() {
   write_compose_file
   write_https_files
   write_enable_https_script
+  write_watchdog_script
   write_lifecycle_scripts
 }
 
@@ -870,6 +918,7 @@ main() {
     print_rollback_instructions "$previous_version" "$previous_image" >&2
     exit 1
   fi
+  install_watchdog_service
 
   echo
   echo "Onyxio upgrade complete."

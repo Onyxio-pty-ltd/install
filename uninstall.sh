@@ -172,6 +172,20 @@ remove_leftover_containers() {
     done
 }
 
+remove_watchdog() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    rm -f "$INSTALL_DIR/bin/watchdog"
+    return
+  fi
+
+  systemctl disable --now onyxio-watchdog.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/onyxio-watchdog.service
+  rm -f "$INSTALL_DIR/bin/watchdog"
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl reset-failed onyxio-watchdog.service >/dev/null 2>&1 || true
+  echo "Removed Onyxio watchdog service and files."
+}
+
 remove_network_agent() {
   if ! command -v systemctl >/dev/null 2>&1; then
     return
@@ -215,6 +229,7 @@ main() {
   assert_safe_install_dir
   confirm
 
+  remove_watchdog
   stop_compose_stack
   remove_leftover_containers
   remove_network_agent
