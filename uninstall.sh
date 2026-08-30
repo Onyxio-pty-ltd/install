@@ -131,6 +131,7 @@ assert_safe_install_dir() {
 
   if [ -d "$INSTALL_DIR" ] &&
     [ ! -f "$INSTALL_DIR/docker-compose.yml" ] &&
+    [ ! -f "$INSTALL_DIR/docker-compose.gateway.yml" ] &&
     [ ! -f "$INSTALL_DIR/.env" ] &&
     [ ! -d "$INSTALL_DIR/data" ]; then
     echo "Refusing to delete ${INSTALL_DIR}; it does not look like an Onyxio install directory." >&2
@@ -154,6 +155,8 @@ stop_compose_stack() {
     compose -f docker-compose.yml -f docker-compose.https.yml down --remove-orphans
   elif [ -f docker-compose.yml ]; then
     compose -f docker-compose.yml down --remove-orphans
+  elif [ -f docker-compose.gateway.yml ]; then
+    compose -f docker-compose.gateway.yml down --remove-orphans
   else
     echo "No Compose file found in ${INSTALL_DIR}; skipping Compose shutdown."
   fi
@@ -165,8 +168,18 @@ remove_leftover_containers() {
     return
   fi
 
+  local project_name
+  project_name="$(basename "$INSTALL_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')"
+
+  docker ps -a \
+    --filter "label=com.docker.compose.project=${project_name}" \
+    --format '{{.ID}}' |
+    while IFS= read -r container_id; do
+      [ -n "$container_id" ] && docker rm -f "$container_id" >/dev/null
+    done
+
   docker ps -a --format '{{.ID}} {{.Names}}' |
-    awk '$2 ~ /^onyxio([-_]|$)/ { print $1 }' |
+    awk -v project="$project_name" '$2 ~ "^" project "([-_]|$)" { print $1 }' |
     while IFS= read -r container_id; do
       [ -n "$container_id" ] && docker rm -f "$container_id" >/dev/null
     done

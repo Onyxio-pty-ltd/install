@@ -20,6 +20,16 @@ Upgrade Onyxio:
 curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
 ```
 
+Install or update a casting gateway for cloud-managed properties:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/install-gateway.sh | sudo env \
+  CASTING_GATEWAY_WS_URL=wss://cloud.example.com \
+  CASTING_GATEWAY_SITE_ID=site-1 \
+  CASTING_GATEWAY_TOKEN=shared-secret \
+  bash
+```
+
 For a non-interactive lab reset:
 
 ```bash
@@ -49,6 +59,11 @@ ONYXIO_ENABLE_HTTPS=true
 HTTPS_HOST=remote.example-hotel.com
 HTTPS_LISTEN_ADDR=172.20.0.10
 HTTPS_PORT=443
+CASTING_GATEWAY_WS_URL=wss://cloud.example.com
+CASTING_GATEWAY_SITE_ID=site-1
+CASTING_GATEWAY_TOKEN=...
+CASTING_GATEWAY_GUEST_INTERFACE_IPS=172.20.0.10/255.255.255.0
+CASTING_GATEWAY_DEVICE_INTERFACE_IPS=10.10.0.10/255.255.255.0
 ```
 
 Example:
@@ -80,6 +95,50 @@ The installer creates:
 - `/opt/onyxio/data/tls`
 
 The server receives Docker images only. It does not receive Onyxio source code.
+
+## Casting Gateway Installs
+
+Gateway-only property installs use `install-gateway.sh` from this repository as
+the single installer/updater. The gateway package runs the same backend image as
+the full product, but starts only the shared casting runtime command and writes
+its files under `/opt/onyxio-gateway` by default.
+
+Required values:
+
+```bash
+CASTING_GATEWAY_WS_URL=wss://cloud.example.com
+CASTING_GATEWAY_SITE_ID=site-1
+CASTING_GATEWAY_TOKEN=shared-secret
+```
+
+Optional interface hints limit discovery and proxy traffic to known guest and
+TV/device networks:
+
+```bash
+CASTING_GATEWAY_GUEST_INTERFACE_IPS=172.20.0.10/255.255.255.0
+CASTING_GATEWAY_DEVICE_INTERFACE_IPS=10.10.0.10/255.255.255.0
+```
+
+Re-run the same command with a new `ONYXIO_VERSION` or `ONYXIO_SERVER_IMAGE` to
+update the gateway:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/install-gateway.sh | sudo env \
+  ONYXIO_VERSION=2026.08.15 \
+  CASTING_GATEWAY_WS_URL=wss://cloud.example.com \
+  CASTING_GATEWAY_SITE_ID=site-1 \
+  CASTING_GATEWAY_TOKEN=shared-secret \
+  bash
+```
+
+To remove a gateway-only install:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo env \
+  ONYXIO_INSTALL_DIR=/opt/onyxio-gateway \
+  ONYXIO_UNINSTALL_CONFIRM=true \
+  bash
+```
 
 ## Crash Recovery
 
@@ -125,8 +184,17 @@ Environment=ONYXIO_WATCHDOG_FAILURE_THRESHOLD=5
 
 The installer remains a separate repository from the source monorepos. Local
 product source builds now live under the sibling `platform/` repository, while
-this repository only publishes the public install, uninstall, and upgrade entry
-points used by target servers.
+this repository only publishes the public install, uninstall, upgrade, and
+gateway install/update entry points used by target servers.
+
+Platform deployment packages also copy package-specific installer entry points
+from this repository:
+
+- `package-install.sh` for offline image bundles
+- `package-install-online.sh` for online registry-pull bundles
+- `package-preflight.sh` for packaged full-server checks
+- `uninstall.sh`, `network-agent.py`, `watchdog.sh`, and `install-gateway.sh`
+  for shared host support
 
 Recommended flow: generate an installation ID and license before deployment, install with `ONYXIO_INSTALLATION_ID=onyxio-...`, and upload the pre-issued signed license in Admin > Settings > License. TV and mobile apps stay locked until the license is valid.
 
