@@ -131,7 +131,7 @@ assert_safe_install_dir() {
 
   if [ -d "$INSTALL_DIR" ] &&
     [ ! -f "$INSTALL_DIR/docker-compose.yml" ] &&
-    [ ! -f "$INSTALL_DIR/docker-compose.gateway.yml" ] &&
+    [ ! -f "$INSTALL_DIR/docker-compose.casting-host.yml" ] &&
     [ ! -f "$INSTALL_DIR/.env" ] &&
     [ ! -d "$INSTALL_DIR/data" ]; then
     echo "Refusing to delete ${INSTALL_DIR}; it does not look like an Onyxio install directory." >&2
@@ -155,8 +155,8 @@ stop_compose_stack() {
     compose -f docker-compose.yml -f docker-compose.https.yml down --remove-orphans
   elif [ -f docker-compose.yml ]; then
     compose -f docker-compose.yml down --remove-orphans
-  elif [ -f docker-compose.gateway.yml ]; then
-    compose -f docker-compose.gateway.yml down --remove-orphans
+  elif [ -f docker-compose.casting-host.yml ]; then
+    compose -f docker-compose.casting-host.yml down --remove-orphans
   else
     echo "No Compose file found in ${INSTALL_DIR}; skipping Compose shutdown."
   fi

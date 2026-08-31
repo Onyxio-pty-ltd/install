@@ -370,7 +370,7 @@ print_https_summary() {
   echo "HTTPS front door:"
   echo "  DNS/split DNS: ${https_host} -> ${listen_addr}"
   echo "  Firewall: allow guest clients to ${listen_addr} TCP ${https_port}"
-  echo "  Admin setting: Settings > Interfaces > Mobile HTTPS URL = https://${https_host}/mobile/"
+  echo "  Admin: HTTPS activation is managed from Settings > Network."
 
   if tls_certificates_available; then
     echo "  Proxy: running via docker-compose.https.yml"
@@ -455,6 +455,7 @@ if [ ! -f .env ]; then
 
   POSTGRES_PASSWORD="$(random_secret)"
   JWT_SECRET="$(random_secret)"
+  CASTING_HOST_TOKEN="$(random_secret)"
 
   cat > .env <<EOF
 ONYXIO_VERSION=${VERSION}
@@ -475,6 +476,12 @@ PHILIPS_WEBSERVICES_PORT=80
 PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=false
 ONYXIO_NETWORK_APPLY_MODE=agent
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
+
+CASTING_CONTROL_PLANE_WS_URL=ws://127.0.0.1:4000
+CASTING_HOST_ID=onprem-main
+CASTING_HOST_NAME=On-prem Main
+CASTING_HOST_ORGANIZATION_IDS=org-1
+CASTING_HOST_TOKEN=${CASTING_HOST_TOKEN}
 
 # Casting pairings are normally cleared on checkout. This cleanup removes
 # pairings whose mobile app has not reconnected within the expiry window.
@@ -540,3 +547,5 @@ echo "TV and mobile apps stay locked until the license is valid."
 echo
 echo "View logs with:"
 echo "  docker compose -f docker-compose.yml logs -f ${PLATFORM_SERVICE_NAME}"
+echo "Casting module logs:"
+echo "  docker compose -f docker-compose.yml logs -f casting-host"

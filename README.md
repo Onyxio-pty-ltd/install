@@ -20,13 +20,15 @@ Upgrade Onyxio:
 curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
 ```
 
-Install or update a casting gateway for cloud-managed properties:
+Install or update a casting host for cloud-managed properties:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/install-gateway.sh | sudo env \
-  CASTING_GATEWAY_WS_URL=wss://cloud.example.com \
-  CASTING_GATEWAY_SITE_ID=site-1 \
-  CASTING_GATEWAY_TOKEN=shared-secret \
+curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
+  CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
+  CASTING_HOST_ID=property-a-east \
+  CASTING_HOST_NAME="Property A East" \
+  CASTING_HOST_ORGANIZATION_IDS=org-1 \
+  CASTING_HOST_TOKEN=shared-secret \
   bash
 ```
 
@@ -59,11 +61,11 @@ ONYXIO_ENABLE_HTTPS=true
 HTTPS_HOST=remote.example-hotel.com
 HTTPS_LISTEN_ADDR=172.20.0.10
 HTTPS_PORT=443
-CASTING_GATEWAY_WS_URL=wss://cloud.example.com
-CASTING_GATEWAY_SITE_ID=site-1
-CASTING_GATEWAY_TOKEN=...
-CASTING_GATEWAY_GUEST_INTERFACE_IPS=172.20.0.10/255.255.255.0
-CASTING_GATEWAY_DEVICE_INTERFACE_IPS=10.10.0.10/255.255.255.0
+CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
+CASTING_HOST_ID=property-a-east
+CASTING_HOST_NAME="Property A East"
+CASTING_HOST_ORGANIZATION_IDS=org-1
+CASTING_HOST_TOKEN=...
 ```
 
 Example:
@@ -89,6 +91,7 @@ The installer creates:
 - `/opt/onyxio/bin/watchdog`
 - `/opt/onyxio/upgrade.sh`
 - `/opt/onyxio/.env`
+- `/opt/onyxio/network-agent`
 - `/opt/onyxio/data/postgres`
 - `/opt/onyxio/data/uploads`
 - `/opt/onyxio/data/uploads/license`
@@ -96,49 +99,60 @@ The installer creates:
 
 The server receives Docker images only. It does not receive Onyxio source code.
 
-## Casting Gateway Installs
+## Casting Host Installs
 
-Gateway-only property installs use `install-gateway.sh` from this repository as
-the single installer/updater. The gateway package runs the same backend image as
-the full product, but starts only the shared casting runtime command and writes
-its files under `/opt/onyxio-gateway` by default.
+Casting-host-only property installs use `install-casting-host.sh` from this
+repository as the single installer/updater. The casting host package runs the
+same backend image as the full product, but starts only the shared casting
+runtime command and writes its files under `/opt/onyxio-casting-host` by
+default.
 
 Required values:
 
 ```bash
-CASTING_GATEWAY_WS_URL=wss://cloud.example.com
-CASTING_GATEWAY_SITE_ID=site-1
-CASTING_GATEWAY_TOKEN=shared-secret
+CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
+CASTING_HOST_ID=property-a-east
+CASTING_HOST_NAME="Property A East"
+CASTING_HOST_ORGANIZATION_IDS=org-1
+CASTING_HOST_TOKEN=shared-secret
 ```
 
-Optional interface hints limit discovery and proxy traffic to known guest and
-TV/device networks:
-
-```bash
-CASTING_GATEWAY_GUEST_INTERFACE_IPS=172.20.0.10/255.255.255.0
-CASTING_GATEWAY_DEVICE_INTERFACE_IPS=10.10.0.10/255.255.255.0
-```
+The casting host reports detected property-network interfaces to the control
+plane. The backend sends current site mappings for the organization and updates
+them when sites are added or removed. Select the guest and device roles in
+Admin > Settings > Casting; those settings are sent back to the host over the
+casting control websocket. The casting host also installs the local
+`onyxio-network-agent.service` so network changes requested from Admin are
+applied on the property-network machine, not by the cloud backend.
+When multiple casting hosts register for the same organization, make sure each
+site is assigned to the intended host in the control plane.
 
 Re-run the same command with a new `ONYXIO_VERSION` or `ONYXIO_SERVER_IMAGE` to
-update the gateway:
+update the casting host:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/install-gateway.sh | sudo env \
+curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
   ONYXIO_VERSION=2026.08.15 \
-  CASTING_GATEWAY_WS_URL=wss://cloud.example.com \
-  CASTING_GATEWAY_SITE_ID=site-1 \
-  CASTING_GATEWAY_TOKEN=shared-secret \
+  CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
+  CASTING_HOST_ID=property-a-east \
+  CASTING_HOST_NAME="Property A East" \
+  CASTING_HOST_ORGANIZATION_IDS=org-1 \
+  CASTING_HOST_TOKEN=shared-secret \
   bash
 ```
 
-To remove a gateway-only install:
+To remove a casting-host-only install:
 
 ```bash
 curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo env \
-  ONYXIO_INSTALL_DIR=/opt/onyxio-gateway \
+  ONYXIO_INSTALL_DIR=/opt/onyxio-casting-host \
   ONYXIO_UNINSTALL_CONFIRM=true \
   bash
 ```
+
+Set each casting module's public URL in Admin > Settings > Casting. TV QR codes
+use the assigned casting module URL when a site has a module assignment; the
+host receives pairing mappings and network commands over WebSocket.
 
 ## Crash Recovery
 
@@ -185,7 +199,7 @@ Environment=ONYXIO_WATCHDOG_FAILURE_THRESHOLD=5
 The installer remains a separate repository from the source monorepos. Local
 product source builds now live under the sibling `platform/` repository, while
 this repository only publishes the public install, uninstall, upgrade, and
-gateway install/update entry points used by target servers.
+casting host install/update entry points used by target servers.
 
 Platform deployment packages also copy package-specific installer entry points
 from this repository:
@@ -193,7 +207,7 @@ from this repository:
 - `package-install.sh` for offline image bundles
 - `package-install-online.sh` for online registry-pull bundles
 - `package-preflight.sh` for packaged full-server checks
-- `uninstall.sh`, `network-agent.py`, `watchdog.sh`, and `install-gateway.sh`
+- `uninstall.sh`, `network-agent.py`, `watchdog.sh`, and `install-casting-host.sh`
   for shared host support
 
 Recommended flow: generate an installation ID and license before deployment, install with `ONYXIO_INSTALLATION_ID=onyxio-...`, and upload the pre-issued signed license in Admin > Settings > License. TV and mobile apps stay locked until the license is valid.
@@ -215,7 +229,7 @@ network to the server guest IP. Put certificates at:
 The installer writes nginx settings and installs a post-onboarding helper at
 `/opt/onyxio/bin/enable-https`. After onboarding has applied the final
 interface addresses, run the command shown in Admin Panel -> Settings ->
-Interfaces. It will look like:
+Network. It will look like:
 
 ```bash
 sudo /opt/onyxio/bin/enable-https \
@@ -224,8 +238,9 @@ sudo /opt/onyxio/bin/enable-https \
   --port 443
 ```
 
-Then set Admin Panel -> Settings -> Interfaces -> Mobile HTTPS URL to
-`https://remote.example-hotel.com/mobile/`.
+Mobile and casting pairing URLs are not stored as organization-level network
+settings; casting module public URLs are configured from Admin > Settings >
+Casting.
 
 For Philips TV first-run bootstrap and cloning, add a local DNS record or DNS
 override on the TV/device network:

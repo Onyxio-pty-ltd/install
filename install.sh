@@ -364,6 +364,26 @@ services:
       ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
     volumes:
       - ./data/uploads:/app/backend/uploads
+
+  casting-host:
+    image: ${ONYXIO_SERVER_IMAGE}
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - onyxio
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      CASTING_HOST_ID: ${CASTING_HOST_ID:-onprem-main}
+      CASTING_HOST_NAME: ${CASTING_HOST_NAME:-On-prem Main}
+      CASTING_HOST_ORGANIZATION_IDS: ${CASTING_HOST_ORGANIZATION_IDS:-org-1}
+      CASTING_HOST_TOKEN: ${CASTING_HOST_TOKEN}
+      CASTING_CONTROL_PLANE_WS_URL: ${CASTING_CONTROL_PLANE_WS_URL:-ws://127.0.0.1:4000}
+      CASTING_HOST_UDP_BIND_ADDRESS: ${CASTING_HOST_UDP_BIND_ADDRESS:-0.0.0.0}
+      ONYXIO_NETWORK_APPLY_MODE: ${ONYXIO_NETWORK_APPLY_MODE:-agent}
+      ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
+    command: ["yarn", "casting:host:start"]
 EOF
 }
 
@@ -591,10 +611,10 @@ compose -f docker-compose.yml -f docker-compose.https.yml up -d https-proxy
 
 echo
 echo "Onyxio HTTPS proxy is running."
-echo "  Mobile HTTPS URL: https://${host}/mobile/"
+echo "  Mobile app URL: https://${host}/mobile/"
 echo "  DNS/split DNS: ${host} -> ${listen_address}"
 echo "  Firewall: allow guest clients to ${listen_address} TCP ${port}"
-echo "  Admin setting: Settings > Interfaces > Mobile HTTPS URL = https://${host}/mobile/"
+echo "  Admin: use Settings > Network to generate or rerun this command."
 EOF
 
   chmod +x "$INSTALL_DIR/bin/enable-https"
@@ -671,9 +691,10 @@ write_env_file() {
     exit 1
   fi
 
-  local postgres_password jwt_secret
+  local postgres_password jwt_secret casting_host_token
   postgres_password="$(random_secret)"
   jwt_secret="$(random_secret)"
+  casting_host_token="$(random_secret)"
 
   cat > "$INSTALL_DIR/.env" <<EOF
 ONYXIO_VERSION=${VERSION}
@@ -694,6 +715,12 @@ PHILIPS_WEBSERVICES_PORT=8080
 PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
 ONYXIO_NETWORK_APPLY_MODE=agent
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
+
+CASTING_CONTROL_PLANE_WS_URL=ws://127.0.0.1:4000
+CASTING_HOST_ID=onprem-main
+CASTING_HOST_NAME=On-prem Main
+CASTING_HOST_ORGANIZATION_IDS=org-1
+CASTING_HOST_TOKEN=${casting_host_token}
 
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${postgres_password}
@@ -843,7 +870,7 @@ print_https_summary() {
     echo "HTTPS front door:"
     echo "  Not activated yet. After onboarding sets the final interface IP, run:"
     echo "    sudo ${INSTALL_DIR}/bin/enable-https --host <mobile-host> --listen-address <interface-ip> --port 443"
-    echo "  Admin shows the exact command in Settings > Interfaces once Mobile HTTPS URL and interface roles are set."
+    echo "  Admin shows the exact command in Settings > Network."
     return
   fi
 
@@ -858,7 +885,7 @@ print_https_summary() {
   echo "HTTPS front door:"
   echo "  DNS/split DNS: ${https_host} -> ${listen_addr}"
   echo "  Firewall: allow guest clients to ${listen_addr} TCP ${https_port}"
-  echo "  Admin setting: Settings > Interfaces > Mobile HTTPS URL = https://${https_host}/mobile/"
+  echo "  Admin: HTTPS activation is managed from Settings > Network."
 
   if tls_certificates_available; then
     echo "  Proxy: running via docker-compose.https.yml"
@@ -939,6 +966,8 @@ main() {
   echo "Install directory: ${INSTALL_DIR}"
   echo "View logs with:"
   echo "  cd ${INSTALL_DIR} && docker compose logs -f onyxio"
+  echo "Casting module logs:"
+  echo "  cd ${INSTALL_DIR} && docker compose logs -f casting-host"
   echo "Watchdog logs:"
   echo "  journalctl -u onyxio-watchdog.service -f"
 }
