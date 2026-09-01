@@ -396,25 +396,6 @@ services:
     volumes:
       - ./data/uploads:/app/backend/uploads
 
-  casting-host:
-    image: ${ONYXIO_SERVER_IMAGE}
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      - onyxio
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      CASTING_HOST_ID: ${CASTING_HOST_ID:-onprem-main}
-      CASTING_HOST_NAME: ${CASTING_HOST_NAME:-On-prem Main}
-      CASTING_HOST_ORGANIZATION_IDS: ${CASTING_HOST_ORGANIZATION_IDS:-org-1}
-      CASTING_HOST_TOKEN: ${CASTING_HOST_TOKEN}
-      CASTING_CONTROL_PLANE_WS_URL: ${CASTING_CONTROL_PLANE_WS_URL:-ws://127.0.0.1:4000}
-      CASTING_HOST_UDP_BIND_ADDRESS: ${CASTING_HOST_UDP_BIND_ADDRESS:-0.0.0.0}
-      ONYXIO_NETWORK_APPLY_MODE: ${ONYXIO_NETWORK_APPLY_MODE:-agent}
-      ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
-    command: ["yarn", "casting:host:start"]
 EOF
 }
 
@@ -741,13 +722,6 @@ ensure_env_defaults() {
   set_env_default "$env_file" HTTPS_PROXY_IMAGE "${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
   set_env_default "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
   set_env_default "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
-  local backend_port
-  backend_port="$(env_value "$env_file" PORT)"
-  backend_port="${backend_port:-4000}"
-  set_env_default "$env_file" CASTING_CONTROL_PLANE_WS_URL "ws://127.0.0.1:${backend_port}"
-  set_env_default "$env_file" CASTING_HOST_ID onprem-main
-  set_env_default "$env_file" CASTING_HOST_NAME "On-prem Main"
-  set_env_default "$env_file" CASTING_HOST_ORGANIZATION_IDS org-1
   set_env_default "$env_file" CASTING_HOST_TOKEN "$(random_secret)"
   set_env_default "$env_file" GRAPHQL_BODY_LIMIT 150mb
   set_env_default "$env_file" ONYXIO_LICENSE_DIR /app/backend/uploads/license
@@ -775,6 +749,17 @@ run_compose() {
   local files
   mapfile -t files < <(compose_files)
   compose "${files[@]}" "$@"
+}
+
+remove_legacy_default_casting_host() {
+  if [ ! -f docker-compose.yml ]; then
+    return
+  fi
+
+  if compose -f docker-compose.yml config --services 2>/dev/null | grep -qx 'casting-host'; then
+    echo "Removing legacy default casting-host container. Add on-prem bridges from Admin > Settings > Casting."
+    compose -f docker-compose.yml rm -sf casting-host >/dev/null 2>&1 || true
+  fi
 }
 
 backup_database() {
@@ -875,12 +860,12 @@ print_rollback_instructions() {
   echo "  cd ${INSTALL_DIR}"
   echo "  sudo sed -i.bak 's#^ONYXIO_VERSION=.*#ONYXIO_VERSION=${previous_version}#' .env"
   echo "  sudo sed -i.bak 's#^ONYXIO_SERVER_IMAGE=.*#ONYXIO_SERVER_IMAGE=${previous_image}#' .env"
-  echo "  docker compose pull onyxio casting-host"
-  if https_configured && tls_certificates_available; then
-    echo "  docker compose -f docker-compose.yml -f docker-compose.https.yml up -d onyxio casting-host https-proxy"
-  else
-    echo "  docker compose up -d onyxio casting-host"
-  fi
+    echo "  docker compose pull onyxio"
+    if https_configured && tls_certificates_available; then
+    echo "  docker compose -f docker-compose.yml -f docker-compose.https.yml up -d onyxio https-proxy"
+    else
+    echo "  docker compose up -d onyxio"
+    fi
 }
 
 main() {
@@ -913,6 +898,7 @@ main() {
     echo "Target image matches the current image. Pulling anyway in case the tag moved."
   fi
 
+  remove_legacy_default_casting_host
   refresh_host_files
   ensure_env_defaults
   backup_database
@@ -921,7 +907,7 @@ main() {
   set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$SERVER_IMAGE"
 
   echo "Pulling target image."
-  if ! run_compose pull onyxio casting-host; then
+  if ! run_compose pull onyxio; then
     set_env_value "$env_file" ONYXIO_VERSION "$previous_version"
     set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$previous_image"
     echo "Image pull failed; restored previous image settings." >&2
@@ -932,16 +918,16 @@ main() {
     docker pull "$(env_value "$env_file" HTTPS_PROXY_IMAGE)" || true
   fi
 
-  echo "Recreating Onyxio backend and casting module containers."
+  echo "Recreating Onyxio backend container."
   if https_configured && tls_certificates_available; then
-    if ! run_compose up -d onyxio casting-host https-proxy; then
+    if ! run_compose up -d onyxio https-proxy; then
       set_env_value "$env_file" ONYXIO_VERSION "$previous_version"
       set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$previous_image"
       echo "Container recreate failed; restored previous image settings." >&2
       print_rollback_instructions "$previous_version" "$previous_image" >&2
       exit 1
     fi
-  elif ! run_compose up -d onyxio casting-host; then
+  elif ! run_compose up -d onyxio; then
     set_env_value "$env_file" ONYXIO_VERSION "$previous_version"
     set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$previous_image"
     echo "Container recreate failed; restored previous image settings." >&2

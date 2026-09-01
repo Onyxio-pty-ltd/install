@@ -365,25 +365,6 @@ services:
     volumes:
       - ./data/uploads:/app/backend/uploads
 
-  casting-host:
-    image: ${ONYXIO_SERVER_IMAGE}
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      - onyxio
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      CASTING_HOST_ID: ${CASTING_HOST_ID:-onprem-main}
-      CASTING_HOST_NAME: ${CASTING_HOST_NAME:-On-prem Main}
-      CASTING_HOST_ORGANIZATION_IDS: ${CASTING_HOST_ORGANIZATION_IDS:-org-1}
-      CASTING_HOST_TOKEN: ${CASTING_HOST_TOKEN}
-      CASTING_CONTROL_PLANE_WS_URL: ${CASTING_CONTROL_PLANE_WS_URL:-ws://127.0.0.1:4000}
-      CASTING_HOST_UDP_BIND_ADDRESS: ${CASTING_HOST_UDP_BIND_ADDRESS:-0.0.0.0}
-      ONYXIO_NETWORK_APPLY_MODE: ${ONYXIO_NETWORK_APPLY_MODE:-agent}
-      ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
-    command: ["yarn", "casting:host:start"]
 EOF
 }
 
@@ -716,10 +697,6 @@ PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
 ONYXIO_NETWORK_APPLY_MODE=agent
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 
-CASTING_CONTROL_PLANE_WS_URL=ws://127.0.0.1:4000
-CASTING_HOST_ID=onprem-main
-CASTING_HOST_NAME=On-prem Main
-CASTING_HOST_ORGANIZATION_IDS=org-1
 CASTING_HOST_TOKEN=${casting_host_token}
 
 POSTGRES_USER=postgres
@@ -966,8 +943,8 @@ main() {
   echo "Install directory: ${INSTALL_DIR}"
   echo "View logs with:"
   echo "  cd ${INSTALL_DIR} && docker compose logs -f onyxio"
-  echo "Casting module logs:"
-  echo "  cd ${INSTALL_DIR} && docker compose logs -f casting-host"
+  echo "Casting bridges:"
+  echo "  Open Admin > Settings > Casting and use Add casting bridge."
   echo "Watchdog logs:"
   echo "  journalctl -u onyxio-watchdog.service -f"
 }

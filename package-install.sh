@@ -473,10 +473,6 @@ PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=false
 ONYXIO_NETWORK_APPLY_MODE=agent
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 
-CASTING_CONTROL_PLANE_WS_URL=ws://127.0.0.1:4000
-CASTING_HOST_ID=onprem-main
-CASTING_HOST_NAME=On-prem Main
-CASTING_HOST_ORGANIZATION_IDS=org-1
 CASTING_HOST_TOKEN=${CASTING_HOST_TOKEN}
 
 # Casting pairings are normally cleared on checkout. This cleanup removes
@@ -543,5 +539,5 @@ echo "TV and mobile apps stay locked until the license is valid."
 echo
 echo "View logs with:"
 echo "  docker compose -f docker-compose.yml logs -f ${PLATFORM_SERVICE_NAME}"
-echo "Casting module logs:"
-echo "  docker compose -f docker-compose.yml logs -f casting-host"
+echo "Casting bridges:"
+echo "  Open Admin > Settings > Casting and use Add casting bridge."

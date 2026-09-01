@@ -61,10 +61,6 @@ ONYXIO_ENABLE_HTTPS=true
 HTTPS_HOST=remote.example-hotel.com
 HTTPS_LISTEN_ADDR=172.20.0.10
 HTTPS_PORT=443
-CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
-CASTING_HOST_ID=property-a-east
-CASTING_HOST_NAME="Property A East"
-CASTING_HOST_ORGANIZATION_IDS=org-1
 CASTING_HOST_TOKEN=...
 ```
 
@@ -98,6 +94,18 @@ The installer creates:
 - `/opt/onyxio/data/tls`
 
 The server receives Docker images only. It does not receive Onyxio source code.
+
+## On-Prem Casting Bridges
+
+Full on-prem installs no longer start a fixed `casting-host` Docker Compose
+service. Open Admin > Settings > Casting and use Add casting bridge to create
+or remove local property-network casting bridge processes. The backend starts
+those bridge processes with a localhost control-plane websocket and the shared
+`CASTING_HOST_TOKEN` from `/opt/onyxio/.env`.
+
+The on-prem Network tab still configures backend host interfaces and HTTPS.
+Casting bridge network settings live on each bridge in Admin > Settings >
+Casting.
 
 ## Casting Host Installs
 
@@ -150,9 +158,11 @@ curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo env \
   bash
 ```
 
-Set each casting module's public URL in Admin > Settings > Casting. TV QR codes
-use the assigned casting module URL when a site has a module assignment; the
-host receives pairing mappings and network commands over WebSocket.
+Set each casting module's public URL in Admin > Settings > Casting when a
+property needs a bridge-specific reachable URL. TV QR codes use the HTTPS URL
+from Admin > Settings > Network first, then fall back to the guest-network
+address reported by the casting module assigned to the device site; the host
+receives pairing mappings and network commands over WebSocket.
 
 ## Crash Recovery
 
@@ -238,9 +248,10 @@ sudo /opt/onyxio/bin/enable-https \
   --port 443
 ```
 
-Mobile and casting pairing URLs are not stored as organization-level network
-settings; casting module public URLs are configured from Admin > Settings >
-Casting.
+The HTTPS URL configured in Admin > Settings > Network is used for mobile and
+casting pairing links when present. If no HTTPS URL is configured, casting QR
+codes fall back to the guest-network IP reported by the casting bridge assigned
+to the device site. Unassigned devices do not get casting QR codes.
 
 For Philips TV first-run bootstrap and cloning, add a local DNS record or DNS
 override on the TV/device network:
