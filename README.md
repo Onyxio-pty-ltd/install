@@ -114,6 +114,9 @@ repository as the single installer/updater. The casting host package runs the
 same backend image as the full product, but starts only the shared casting
 runtime command and writes its files under `/opt/onyxio-casting-host` by
 default.
+It starts the casting runtime immediately and reports the installed
+`ONYXIO_VERSION` as the casting module version unless `CASTING_HOST_VERSION` is
+set explicitly.
 
 Required values:
 
