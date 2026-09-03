@@ -49,7 +49,7 @@ onyxio_container_running() {
 onyxio_accepting_connections() {
   local port
   port="$(env_value "$INSTALL_DIR/.env" PORT)"
-  port="${port:-4000}"
+  port="${port:-80}"
 
   ( : > "/dev/tcp/127.0.0.1/${port}" ) >/dev/null 2>&1
 }

@@ -317,7 +317,7 @@ wait_for_onyxio_startup() {
   local timeout_seconds="${ONYXIO_INSTALL_STARTUP_TIMEOUT_SECONDS:-120}"
   local port
   port="$(env_value .env PORT)"
-  port="${port:-4000}"
+  port="${port:-80}"
 
   echo "Waiting for Onyxio backend startup checks to pass."
   local start_time
@@ -459,17 +459,14 @@ if [ ! -f .env ]; then
 ONYXIO_VERSION=${VERSION}
 
 SERVER_IP=${SERVER_IP}
-PUBLIC_SERVER_URL=http://${SERVER_IP}:4000
-PUBLIC_APP_URL=http://${SERVER_IP}:4000
-PUBLIC_TV_APP_URL=http://${SERVER_IP}:4000/tv/
-MOBILE_APP_PUBLIC_URL=http://${SERVER_IP}:4000/mobile/
+PUBLIC_SERVER_URL=http://${SERVER_IP}
+PUBLIC_APP_URL=http://${SERVER_IP}
+PUBLIC_TV_APP_URL=http://${SERVER_IP}/tv/
+MOBILE_APP_PUBLIC_URL=http://${SERVER_IP}/mobile/
 PHILIPS_WEBSERVICES_PUBLIC_URL=http://${SERVER_IP}/webservices.php
 PHILIPS_WEBSERVICES_BOOTSTRAP_PUBLIC_URL=http://${SERVER_IP}
 
-PORT=4000
-WEB_SOCKET_PORT=8081
-PHILIPS_WEBSERVICES_PORT=80
-PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=false
+PORT=80
 ONYXIO_NETWORK_APPLY_MODE=agent
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 
@@ -521,9 +518,9 @@ wait_for_onyxio_startup
 SERVER_IP="$(grep '^SERVER_IP=' .env | cut -d= -f2-)"
 echo
 echo "Onyxio is running."
-echo "Admin:  http://${SERVER_IP}:4000/"
-echo "TV:     http://${SERVER_IP}:4000/tv/"
-echo "Mobile: http://${SERVER_IP}:4000/mobile/"
+echo "Admin:  http://${SERVER_IP}/"
+echo "TV:     http://${SERVER_IP}/tv/"
+echo "Mobile: http://${SERVER_IP}/mobile/"
 echo "Philips WebServices: http://${SERVER_IP}/webservices.php"
 print_https_summary
 echo

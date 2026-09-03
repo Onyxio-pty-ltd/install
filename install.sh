@@ -357,10 +357,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-onyxio}
-      PORT: ${PORT:-4000}
-      WEB_SOCKET_PORT: ${WEB_SOCKET_PORT:-8081}
-      PHILIPS_WEBSERVICES_PORT: ${PHILIPS_WEBSERVICES_PORT:-8080}
-      PHILIPS_WEBSERVICES_BOOTSTRAP_PORT: ${PHILIPS_WEBSERVICES_BOOTSTRAP_PORT:-80}
+      PORT: ${PORT:-80}
       ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
     volumes:
       - ./data/uploads:/app/backend/uploads
@@ -383,7 +380,7 @@ services:
       HTTPS_HOST: ${HTTPS_HOST:-_}
       HTTPS_LISTEN_ADDR: ${HTTPS_LISTEN_ADDR:-0.0.0.0}
       HTTPS_PORT: ${HTTPS_PORT:-443}
-      PORT: ${PORT:-4000}
+      PORT: ${PORT:-80}
       TLS_CERT_FILE: ${TLS_CERT_FILE:-/etc/onyxio/tls/fullchain.pem}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-/etc/onyxio/tls/privkey.pem}
       NGINX_ENVSUBST_FILTER: "^(HTTPS_HOST|HTTPS_LISTEN_ADDR|HTTPS_PORT|PORT|TLS_CERT_FILE|TLS_KEY_FILE)$"
@@ -683,17 +680,14 @@ ONYXIO_SERVER_IMAGE=${SERVER_IMAGE}
 POSTGRES_IMAGE=${POSTGRES_IMAGE}
 
 SERVER_IP=${server_ip}
-PUBLIC_SERVER_URL=http://${server_ip}:4000
-PUBLIC_APP_URL=http://${server_ip}:4000
-PUBLIC_TV_APP_URL=http://${server_ip}:4000/tv/
-MOBILE_APP_PUBLIC_URL=http://${server_ip}:4000/mobile/
+PUBLIC_SERVER_URL=http://${server_ip}
+PUBLIC_APP_URL=http://${server_ip}
+PUBLIC_TV_APP_URL=http://${server_ip}/tv/
+MOBILE_APP_PUBLIC_URL=http://${server_ip}/mobile/
 PHILIPS_WEBSERVICES_PUBLIC_URL=http://${server_ip}/webservices.php
 PHILIPS_WEBSERVICES_BOOTSTRAP_PUBLIC_URL=http://${server_ip}
 
-PORT=4000
-WEB_SOCKET_PORT=8081
-PHILIPS_WEBSERVICES_PORT=8080
-PHILIPS_WEBSERVICES_BOOTSTRAP_PORT=80
+PORT=80
 ONYXIO_NETWORK_APPLY_MODE=agent
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 
@@ -789,7 +783,7 @@ wait_for_onyxio_startup() {
   local timeout_seconds="${ONYXIO_INSTALL_STARTUP_TIMEOUT_SECONDS:-120}"
   local port
   port="$(env_value "$INSTALL_DIR/.env" PORT)"
-  port="${port:-4000}"
+  port="${port:-80}"
 
   echo "Waiting for Onyxio backend startup checks to pass."
   local start_time
@@ -923,9 +917,9 @@ main() {
 
   echo
   echo "Onyxio is running."
-  echo "Admin:  http://${server_ip}:4000/"
-  echo "TV:     http://${server_ip}:4000/tv/"
-  echo "Mobile: http://${server_ip}:4000/mobile/"
+  echo "Admin:  http://${server_ip}/"
+  echo "TV:     http://${server_ip}/tv/"
+  echo "Mobile: http://${server_ip}/mobile/"
   echo "Philips WebServices: http://${server_ip}/webservices.php"
   print_philips_bootstrap_summary "$server_ip"
   print_https_summary

@@ -240,6 +240,16 @@ check_port() {
   pass "${label} port ${value} is available"
 }
 
+check_legacy_split_ports() {
+  local key
+
+  for key in WEB_SOCKET_PORT PHILIPS_WEBSERVICES_PORT PHILIPS_WEBSERVICES_BOOTSTRAP_PORT; do
+    if [ -n "$(env_value .env "$key")" ]; then
+      fail "${key} is deprecated; use PORT for the unified backend HTTP/WebSocket/WebServices listener"
+    fi
+  done
+}
+
 check_network_and_ports() {
   local server_ip https_addr existing_services
   server_ip="$(env_value .env SERVER_IP)"
@@ -251,10 +261,8 @@ check_network_and_ports() {
 
   check_ip_setting "SERVER_IP" "$server_ip"
 
-  check_port "Backend HTTP" "$(env_value .env PORT)" "$existing_services"
-  check_port "WebSocket" "$(env_value .env WEB_SOCKET_PORT)" "$existing_services"
-  check_port "Philips WebServices" "$(env_value .env PHILIPS_WEBSERVICES_PORT)" "$existing_services"
-  check_port "Philips bootstrap WebServices" "$(env_value .env PHILIPS_WEBSERVICES_BOOTSTRAP_PORT)" "$existing_services"
+  check_legacy_split_ports
+  check_port "Backend HTTP/WebSocket/WebServices" "$(env_value .env PORT)" "$existing_services"
   check_port "Postgres localhost" "$(env_value .env POSTGRES_PORT)" "$existing_services"
 
   if casting_enabled; then
