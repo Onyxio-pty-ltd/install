@@ -8,6 +8,15 @@ Install Onyxio:
 curl -fsSL https://install.onyxio.com.au | sudo bash
 ```
 
+Install the cloud control plane on a cloud VM:
+
+```bash
+curl -fsSL https://install.onyxio.com.au | sudo env \
+  ONYXIO_DEPLOYMENT=cloud \
+  PUBLIC_SERVER_URL=https://cloud.example.com \
+  bash
+```
+
 Uninstall Onyxio:
 
 ```bash
@@ -56,7 +65,9 @@ ONYXIO_REGISTRY=ghcr.io
 ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME
 ONYXIO_REGISTRY_TOKEN=...
 ONYXIO_INSTALL_DIR=/opt/onyxio
+ONYXIO_DEPLOYMENT=cloud
 SERVER_IP=192.168.85.2
+PUBLIC_SERVER_URL=https://cloud.example.com
 ONYXIO_ENABLE_HTTPS=true
 HTTPS_HOST=remote.example-hotel.com
 HTTPS_LISTEN_ADDR=172.20.0.10
@@ -87,13 +98,38 @@ The installer creates:
 - `/opt/onyxio/bin/watchdog`
 - `/opt/onyxio/upgrade.sh`
 - `/opt/onyxio/.env`
-- `/opt/onyxio/network-agent`
+- `/opt/onyxio/network-agent` for on-prem installs
 - `/opt/onyxio/data/postgres`
 - `/opt/onyxio/data/uploads`
 - `/opt/onyxio/data/uploads/license`
 - `/opt/onyxio/data/tls`
 
 The server receives Docker images only. It does not receive Onyxio source code.
+
+## Cloud Control Plane Installs
+
+The same full installer can run the hosted cloud backend when
+`ONYXIO_DEPLOYMENT=cloud` or `ONYXIO_CLOUD_MODE=true` is provided. In cloud
+mode the installer writes the cloud flags into `/opt/onyxio/.env`, uses
+`PUBLIC_SERVER_URL` for the admin, TV, and mobile app URLs, disables local
+casting and Philips WebServices, and disables host network changes from the
+backend.
+
+Cloud installs should provide a public HTTP(S) URL:
+
+```bash
+curl -fsSL https://install.onyxio.com.au | sudo env \
+  ONYXIO_VERSION=2026.08.15 \
+  ONYXIO_DEPLOYMENT=cloud \
+  PUBLIC_SERVER_URL=https://cloud.example.com \
+  ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
+  ONYXIO_REGISTRY_TOKEN=TOKEN \
+  bash
+```
+
+This install still uses the bundled Docker Compose Postgres service, so it is
+best suited to a single-VM cloud control plane. Property LAN casting still uses
+the separate casting-host install below.
 
 ## On-Prem Casting Bridges
 

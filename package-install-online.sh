@@ -102,6 +102,66 @@ env_value() {
   grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
 }
 
+is_cloud_install() {
+  case "$(printf '%s' "${ONYXIO_DEPLOYMENT:-}" | tr '[:upper:]' '[:lower:]')" in
+    cloud)
+      return 0
+      ;;
+  esac
+
+  case "$(printf '%s' "${ONYXIO_CLOUD_MODE:-}" | tr '[:upper:]' '[:lower:]')" in
+    y | yes | true | 1)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+strip_trailing_slash() {
+  local value="$1"
+  while [ "${value%/}" != "$value" ]; do
+    value="${value%/}"
+  done
+  echo "$value"
+}
+
+require_http_url() {
+  local name="$1"
+  local value="$2"
+
+  case "$value" in
+    http://* | https://*)
+      return
+      ;;
+    *)
+      echo "${name} must start with http:// or https://." >&2
+      exit 1
+      ;;
+  esac
+}
+
+resolve_public_server_url() {
+  local server_ip="$1"
+  local public_url="${PUBLIC_SERVER_URL:-}"
+
+  if [ -z "$public_url" ] && is_cloud_install && [ -n "${HTTPS_HOST:-}" ]; then
+    public_url="https://${HTTPS_HOST}"
+  fi
+
+  if [ -z "$public_url" ] && is_cloud_install; then
+    public_url="$(prompt "Public cloud URL" "")"
+  fi
+
+  if [ -z "$public_url" ]; then
+    public_url="http://${server_ip}"
+  fi
+
+  public_url="$(strip_trailing_slash "$public_url")"
+  require_http_url "PUBLIC_SERVER_URL" "$public_url"
+  echo "$public_url"
+}
+
 install_license_public_key() {
   local target="data/uploads/license/public-key.pem"
   local source="$SCRIPT_DIR/license/public-key.pem"
@@ -286,7 +346,17 @@ https_configured() {
 
 start_compose() {
   if https_configured && tls_certificates_available; then
+    if is_cloud_install; then
+      compose -f docker-compose.yml -f docker-compose.https.yml up -d postgres "$PLATFORM_SERVICE_NAME" https-proxy
+      return
+    fi
+
     compose -f docker-compose.yml -f docker-compose.https.yml up -d
+    return
+  fi
+
+  if is_cloud_install; then
+    compose -f docker-compose.yml up -d postgres "$PLATFORM_SERVICE_NAME"
     return
   fi
 
@@ -440,6 +510,22 @@ EOF
   echo "${selected_ip:-$default_ip}"
 }
 
+resolve_server_ip() {
+  if [ -n "${SERVER_IP:-}" ]; then
+    echo "$SERVER_IP"
+    return
+  fi
+
+  if ! is_cloud_install; then
+    prompt_server_ip
+    return
+  fi
+
+  local detected_ip
+  detected_ip="$(detect_ips | head -n 1)"
+  echo "${detected_ip:-127.0.0.1}"
+}
+
 pull_image() {
   local image="$1"
   echo
@@ -451,11 +537,17 @@ pull_image() {
 ENV_CREATED=false
 if [ ! -f .env ]; then
   ENV_CREATED=true
-  SERVER_IP="$(prompt_server_ip)"
+  SERVER_IP="$(resolve_server_ip)"
 
   POSTGRES_PASSWORD="$(random_secret)"
   JWT_SECRET="$(random_secret)"
   CASTING_HOST_TOKEN="$(random_secret)"
+
+  PUBLIC_URL="$(resolve_public_server_url "$SERVER_IP")"
+  NETWORK_APPLY_MODE="agent"
+  if is_cloud_install; then
+    NETWORK_APPLY_MODE="disabled"
+  fi
 
   cat > .env <<EOF
 ONYXIO_VERSION=${VERSION}
@@ -463,15 +555,15 @@ ONYXIO_SERVER_IMAGE=${SERVER_IMAGE}
 POSTGRES_IMAGE=${POSTGRES_IMAGE}
 
 SERVER_IP=${SERVER_IP}
-PUBLIC_SERVER_URL=http://${SERVER_IP}
-PUBLIC_APP_URL=http://${SERVER_IP}
-PUBLIC_TV_APP_URL=http://${SERVER_IP}/tv/
-MOBILE_APP_PUBLIC_URL=http://${SERVER_IP}/mobile/
+PUBLIC_SERVER_URL=${PUBLIC_URL}
+PUBLIC_APP_URL=${PUBLIC_URL}
+PUBLIC_TV_APP_URL=${PUBLIC_URL}/tv/
+MOBILE_APP_PUBLIC_URL=${PUBLIC_URL}/mobile/
 PHILIPS_WEBSERVICES_PUBLIC_URL=http://${SERVER_IP}/webservices.php
 PHILIPS_WEBSERVICES_BOOTSTRAP_PUBLIC_URL=http://${SERVER_IP}
 
 PORT=80
-ONYXIO_NETWORK_APPLY_MODE=agent
+ONYXIO_NETWORK_APPLY_MODE=${NETWORK_APPLY_MODE}
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 
 CASTING_CONTROL_PLANE_WS_URL=ws://127.0.0.1
@@ -498,18 +590,37 @@ ONYXIO_LICENSE_DIR=/app/backend/uploads/license
 ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
 ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
 EOF
+
+  if is_cloud_install; then
+    cat >> .env <<'EOF'
+
+ONYXIO_CLOUD_MODE=true
+ONYXIO_DEPLOYMENT=cloud
+CASTING_ENABLED=false
+PHILIPS_WEBSERVICES_ENABLED=false
+CASTING_HOST_RUNTIME_ENABLED=false
+EOF
+  fi
 else
   echo "Onyxio is already installed in this directory." >&2
   echo "Run ./uninstall.sh first, or install into a clean directory." >&2
   exit 1
 fi
 
-require_network_agent_dependencies
+if ! is_cloud_install; then
+  require_network_agent_dependencies
+fi
 mkdir -p data/postgres data/uploads/license data/tls
-install_network_agent
+if ! is_cloud_install; then
+  install_network_agent
+fi
 install_license_public_key
 SERVER_IP="$(grep '^SERVER_IP=' .env | cut -d= -f2-)"
-configure_https_env "$SERVER_IP" "$ENV_CREATED"
+if is_cloud_install; then
+  configure_https_env "$SERVER_IP" "false"
+else
+  configure_https_env "$SERVER_IP" "$ENV_CREATED"
+fi
 
 run_preflight online
 
@@ -526,23 +637,34 @@ wait_for_onyxio_startup
 SERVER_IP="$(grep '^SERVER_IP=' .env | cut -d= -f2-)"
 echo
 echo "Onyxio is running."
-echo "Admin:  http://${SERVER_IP}/"
-echo "TV:     http://${SERVER_IP}/tv/"
-echo "Mobile: http://${SERVER_IP}/mobile/"
-echo "Philips WebServices: http://${SERVER_IP}/webservices.php"
+echo "Admin:  $(env_value .env PUBLIC_APP_URL)/"
+echo "TV:     $(env_value .env PUBLIC_TV_APP_URL)"
+echo "Mobile: $(env_value .env MOBILE_APP_PUBLIC_URL)"
+if ! is_cloud_install; then
+  echo "Philips WebServices: http://${SERVER_IP}/webservices.php"
+fi
 print_https_summary
 echo
-echo "License activation:"
-echo "  1. The Onyxio license public key is installed at ./data/uploads/license/public-key.pem."
-if grep -q '^ONYXIO_INSTALLATION_ID=onyxio-' .env; then
-  echo "  2. This server is seeded with $(grep '^ONYXIO_INSTALLATION_ID=' .env | cut -d= -f2-)."
+if is_cloud_install; then
+  echo "Cloud deployment:"
+  echo "  The backend is running in cloud mode."
+  echo "  Product access is managed by organization subscriptions in the cloud app."
+  echo "  Install property casting hosts with install-casting-host.sh and point them at $(env_value .env PUBLIC_SERVER_URL)."
 else
-  echo "  2. Open Admin > Settings > License and copy the generated installation ID."
+  echo "License activation:"
+  echo "  1. The Onyxio license public key is installed at ./data/uploads/license/public-key.pem."
+  if grep -q '^ONYXIO_INSTALLATION_ID=onyxio-' .env; then
+    echo "  2. This server is seeded with $(grep '^ONYXIO_INSTALLATION_ID=' .env | cut -d= -f2-)."
+  else
+    echo "  2. Open Admin > Settings > License and copy the generated installation ID."
+  fi
+  echo "  3. Upload the signed license in Admin > Settings > License."
+  echo "TV and mobile apps stay locked until the license is valid."
 fi
-echo "  3. Upload the signed license in Admin > Settings > License."
-echo "TV and mobile apps stay locked until the license is valid."
 echo
 echo "View logs with:"
 echo "  docker compose -f docker-compose.yml logs -f ${PLATFORM_SERVICE_NAME}"
-echo "Casting module logs:"
-echo "  docker compose -f docker-compose.yml logs -f casting-host"
+if ! is_cloud_install; then
+  echo "Casting module logs:"
+  echo "  docker compose -f docker-compose.yml logs -f casting-host"
+fi

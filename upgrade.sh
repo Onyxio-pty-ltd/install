@@ -122,6 +122,24 @@ env_value() {
   grep "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
 }
 
+is_cloud_install() {
+  local env_file="$INSTALL_DIR/.env"
+
+  case "$(printf '%s' "${ONYXIO_DEPLOYMENT:-$(env_value "$env_file" ONYXIO_DEPLOYMENT)}" | tr '[:upper:]' '[:lower:]')" in
+    cloud)
+      return 0
+      ;;
+  esac
+
+  case "$(printf '%s' "${ONYXIO_CLOUD_MODE:-$(env_value "$env_file" ONYXIO_CLOUD_MODE)}" | tr '[:upper:]' '[:lower:]')" in
+    y | yes | true | 1)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 derive_image_tag() {
   local image="$1"
   local tag
@@ -726,9 +744,11 @@ refresh_host_files() {
   esac
 
   echo "Refreshing host support files."
-  require_network_agent_dependencies
   mkdir -p "$INSTALL_DIR/data/postgres" "$INSTALL_DIR/data/uploads/license" "$INSTALL_DIR/data/tls"
-  install_network_agent
+  if ! is_cloud_install; then
+    require_network_agent_dependencies
+    install_network_agent
+  fi
   install_license_public_key
   write_compose_file
   write_https_files
@@ -742,8 +762,16 @@ ensure_env_defaults() {
 
   set_env_default "$env_file" POSTGRES_IMAGE "${ONYXIO_POSTGRES_IMAGE:-postgres:15}"
   set_env_default "$env_file" HTTPS_PROXY_IMAGE "${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
-  set_env_default "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
-  set_env_default "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
+  if is_cloud_install; then
+    set_env_value "$env_file" ONYXIO_CLOUD_MODE true
+    set_env_value "$env_file" ONYXIO_DEPLOYMENT cloud
+    set_env_value "$env_file" ONYXIO_NETWORK_APPLY_MODE disabled
+    set_env_value "$env_file" CASTING_ENABLED false
+    set_env_value "$env_file" PHILIPS_WEBSERVICES_ENABLED false
+  else
+    set_env_default "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
+    set_env_default "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
+  fi
   set_env_default "$env_file" CASTING_HOST_TOKEN "$(random_secret)"
   set_env_default "$env_file" GRAPHQL_BODY_LIMIT 150mb
   set_env_default "$env_file" ONYXIO_LICENSE_DIR /app/backend/uploads/license
