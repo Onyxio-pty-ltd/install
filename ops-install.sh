@@ -488,6 +488,7 @@ DATA_FILE=/app/backend/data/app-data.json
 UPLOADS_DIR=/app/backend/uploads
 FRONTEND_DIST_DIR=/app/frontend/dist
 GRAPHQL_BODY_LIMIT=150mb
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 
 ONYXIO_CLOUD_MODE=true
 ONYXIO_DEPLOYMENT=cloud
