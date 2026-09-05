@@ -185,22 +185,45 @@ remove_leftover_containers() {
     done
 }
 
+remove_watchdog_service() {
+  local service="$1"
+  local service_file="/etc/systemd/system/${service}"
+
+  if [ ! -f "$service_file" ]; then
+    return
+  fi
+
+  if ! grep -Fxq "Environment=ONYXIO_INSTALL_DIR=${INSTALL_DIR}" "$service_file"; then
+    echo "Keeping ${service}; it points at another install directory."
+    return
+  fi
+
+  systemctl disable --now "$service" >/dev/null 2>&1 || true
+  rm -f "$service_file"
+  systemctl reset-failed "$service" >/dev/null 2>&1 || true
+  echo "Removed ${service}."
+}
+
 remove_watchdog() {
   if ! command -v systemctl >/dev/null 2>&1; then
     rm -f "$INSTALL_DIR/bin/watchdog"
     return
   fi
 
-  systemctl disable --now onyxio-watchdog.service >/dev/null 2>&1 || true
-  rm -f /etc/systemd/system/onyxio-watchdog.service
+  remove_watchdog_service onyxio-watchdog.service
+  remove_watchdog_service onyxio-management-watchdog.service
   rm -f "$INSTALL_DIR/bin/watchdog"
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl reset-failed onyxio-watchdog.service >/dev/null 2>&1 || true
-  echo "Removed Onyxio watchdog service and files."
 }
 
 remove_network_agent() {
   if ! command -v systemctl >/dev/null 2>&1; then
+    return
+  fi
+
+  if [ -f /etc/systemd/system/onyxio-network-agent.service ] &&
+    ! grep -Fq "${INSTALL_DIR}/network-agent/agent.py" /etc/systemd/system/onyxio-network-agent.service; then
+    echo "Keeping onyxio-network-agent.service; it points at another install directory."
     return
   fi
 
@@ -219,7 +242,7 @@ remove_images() {
   fi
 
   docker images --format '{{.Repository}}:{{.Tag}}' |
-    awk '$1 ~ /(^|\/)onyxio\// || $1 ~ /^ghcr\.io\/onyxio-pty-ltd\/server:/ { print $1 }' |
+    awk '$1 ~ /(^|\/)onyxio\// || $1 ~ /^ghcr\.io\/onyxio-pty-ltd\/(server|management):/ { print $1 }' |
     while IFS= read -r image; do
       [ -n "$image" ] && docker rmi "$image" >/dev/null || true
     done

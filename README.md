@@ -17,6 +17,14 @@ curl -fsSL https://install.onyxio.com.au | sudo env \
   bash
 ```
 
+Install the cloud-only management console:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+  PUBLIC_SERVER_URL=https://console.example.com \
+  bash
+```
+
 Uninstall Onyxio:
 
 ```bash
@@ -105,6 +113,41 @@ The installer creates:
 - `/opt/onyxio/data/tls`
 
 The server receives Docker images only. It does not receive Onyxio source code.
+
+## Management Console Installs
+
+`ops-install.sh` installs the internal management console as a cloud-only
+stack. It writes a Docker Compose file with the app and Postgres, creates the
+production license-signing private key under the install directory, and always
+sets the cloud flags that disable on-prem services.
+
+```bash
+curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+  PUBLIC_SERVER_URL=https://console.example.com \
+  ONYXIO_MANAGEMENT_VERSION=2026.09.05 \
+  ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
+  ONYXIO_REGISTRY_TOKEN=TOKEN \
+  bash
+```
+
+Optional variables:
+
+```bash
+ONYXIO_INSTALL_DIR=/opt/onyxio-management
+ONYXIO_MANAGEMENT_VERSION=2026.09.05
+ONYXIO_MANAGEMENT_IMAGE=ghcr.io/onyxio-pty-ltd/management:2026.09.05
+ONYXIO_POSTGRES_IMAGE=postgres:15
+PORT=80
+ONYXIO_ENABLE_HTTPS=true
+HTTPS_HOST=console.example.com
+HTTPS_LISTEN_ADDR=0.0.0.0
+HTTPS_PORT=443
+ONYXIO_SKIP_WATCHDOG=true
+```
+
+This installer has no on-prem mode. It does not install a host network agent,
+casting host, TV/mobile app URLs, Philips WebServices, or license public-key
+assets for customer servers.
 
 ## Cloud Control Plane Installs
 
