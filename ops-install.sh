@@ -47,6 +47,16 @@ Environment:
   HTTPS_LISTEN_ADDR=0.0.0.0
   HTTPS_PORT=443
   ONYXIO_SKIP_WATCHDOG=true
+
+Optional team invitation email (PUBLIC_URL is set from the public cloud URL):
+  EMAIL_PROVIDER=smtp
+  EMAIL_FROM='Onyxio <no-reply@example.com>'
+  SMTP_HOST=smtp.example.com
+  SMTP_PORT=587
+  SMTP_SECURE=false
+  SMTP_USER=YOUR_SMTP_USERNAME
+  SMTP_PASSWORD=YOUR_SMTP_PASSWORD
+  Provider and TLS mode are detected automatically when omitted.
 EOF
 }
 
@@ -468,6 +478,18 @@ server {
 EOF
 }
 
+# Quote values for Docker Compose dotenv parsing, including literal dollars in
+# SMTP credentials. Escape backslashes first so later escapes stay intact.
+quote_compose_env_value() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//\$/\$\$}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  printf '"%s"' "$value"
+}
+
 write_env_file() {
   local public_url="$1"
   local postgres_password jwt_secret
@@ -481,6 +503,7 @@ POSTGRES_IMAGE=${POSTGRES_IMAGE}
 
 PUBLIC_SERVER_URL=${public_url}
 PUBLIC_APP_URL=${public_url}
+PUBLIC_URL=${public_url}
 CORS_ORIGIN=${public_url}
 
 PORT=${PORT}
@@ -489,6 +512,14 @@ UPLOADS_DIR=/app/backend/uploads
 FRONTEND_DIST_DIR=/app/frontend/dist
 GRAPHQL_BODY_LIMIT=150mb
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+
+EMAIL_PROVIDER=$(quote_compose_env_value "${EMAIL_PROVIDER:-}")
+EMAIL_FROM=$(quote_compose_env_value "${EMAIL_FROM:-}")
+SMTP_HOST=$(quote_compose_env_value "${SMTP_HOST:-}")
+SMTP_PORT=$(quote_compose_env_value "${SMTP_PORT:-587}")
+SMTP_SECURE=$(quote_compose_env_value "${SMTP_SECURE:-}")
+SMTP_USER=$(quote_compose_env_value "${SMTP_USER:-}")
+SMTP_PASSWORD=$(quote_compose_env_value "${SMTP_PASSWORD:-}")
 
 ONYXIO_CLOUD_MODE=true
 ONYXIO_DEPLOYMENT=cloud

@@ -145,6 +145,38 @@ HTTPS_PORT=443
 ONYXIO_SKIP_WATCHDOG=true
 ```
 
+For emailed team invitations, pass these additional variables to `sudo env`:
+
+```bash
+EMAIL_PROVIDER=smtp
+EMAIL_FROM='Onyxio <no-reply@example.com>'
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=YOUR_SMTP_USERNAME
+SMTP_PASSWORD='YOUR_SMTP_PASSWORD'
+```
+
+The installer saves these settings in its private `.env` file and sets
+`PUBLIC_URL` to the resolved `PUBLIC_SERVER_URL` for password setup links.
+SMTP requires a host and sender address, plus credentials if your mail server
+requires authentication. If `EMAIL_PROVIDER` is omitted, the app selects SMTP
+when `SMTP_HOST` is supplied; otherwise email is disabled in production. If
+`SMTP_SECURE` is omitted, the app enables implicit TLS for port 465 and uses
+STARTTLS when offered on other ports (587 by default). Without SMTP, enter a
+password manually when adding a team member.
+
+For an existing installation, add `PUBLIC_URL` and the email settings to
+`/opt/onyxio-management/.env`, then run `docker compose up -d onyxio` from that
+directory to recreate the app container. Use your chosen install directory if
+different. The installer only supports fresh installations.
+
+The Ops repo's `.github/workflows/ops-ci.yml` builds and publishes the management
+image after tests and a container smoke test pass. Its Dockerfile installs
+dependencies from the current backend lockfile (including `nodemailer`), builds
+the frontend, and includes `/app/shared/projectKey.mts` for the backend's runtime
+import. See the Ops README for release tags and publishing controls.
+
 This installer has no on-prem mode. It does not install a host network agent,
 casting host, TV/mobile app URLs, Philips WebServices, or license public-key
 assets for customer servers.
