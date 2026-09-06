@@ -2,6 +2,34 @@
 
 Public installer endpoint for internet-connected Onyxio servers.
 
+## Host prerequisites
+
+The online commands below (`install.sh`, the root URL, and `ops-install.sh`)
+automatically download missing Docker Engine and Compose packages on Ubuntu
+using `apt-get`. This includes Ubuntu 26.04 (Resolute). They enable the Ubuntu
+Universe repository when necessary and start Docker through systemd if its
+daemon is stopped. Existing working Docker and Compose installations are reused.
+If only Compose is missing, the engine is left installed and only the missing
+plugin is added; package removal is disabled.
+
+This is an internet installation: host packages come from package repositories,
+and application images are pulled from container registries. No Docker packages
+are embedded into the Onyxio application image or an offline bundle by this step.
+The server needs outbound access to those repositories and registries. On other
+operating systems, install Docker Engine and Compose before running the installer.
+The separate `package-install.sh` and `package-install-online.sh` bundle entry
+points still require Docker to be installed beforehand.
+
+To install the prerequisites manually on a fresh Ubuntu 26.04 server:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker
+sudo docker info
+sudo docker compose version
+```
+
 Install Onyxio:
 
 ```bash

@@ -229,11 +229,73 @@ require_root() {
   fi
 }
 
+docker_host_os() {
+  local ID=""
+  if [ -r /etc/os-release ]; then
+    . /etc/os-release
+  fi
+  printf '%s\n' "$ID"
+}
+
 require_docker() {
+  local missing_engine=false
+  local missing_compose=false
+  local packages=()
+  local package
+
+  command -v docker >/dev/null 2>&1 || missing_engine=true
+  if ! docker compose version >/dev/null 2>&1 && ! docker-compose version >/dev/null 2>&1; then
+    missing_compose=true
+  fi
+
+  if [ "$missing_engine" = true ] || [ "$missing_compose" = true ]; then
+    if [ "$(docker_host_os)" != ubuntu ] || ! command -v apt-get >/dev/null 2>&1; then
+      echo "Automatic Docker installation requires Ubuntu with apt-get." >&2
+      echo "Install Docker Engine and Compose for this operating system, then rerun the installer." >&2
+      exit 1
+    fi
+
+    echo "Downloading and installing missing Docker prerequisites from package repositories..."
+    apt-get update
+    if [ "$missing_engine" = true ]; then
+      packages+=(docker.io)
+    fi
+    if [ "$missing_compose" = true ]; then
+      # Reuse Docker's repository when it is already configured for an existing engine.
+      if [ "$missing_engine" = false ] && apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+        packages+=(docker-compose-plugin)
+      else
+        packages+=(docker-compose-v2)
+      fi
+    fi
+    for package in "${packages[@]}"; do
+      if ! apt-cache show "$package" >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get install --no-remove -y software-properties-common
+        add-apt-repository -y universe
+        apt-get update
+        break
+      fi
+    done
+    # Do not replace/remove an existing engine when only Compose is missing.
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends --no-remove -y "${packages[@]}" ca-certificates curl
+  fi
+
   if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is required on this server before installing Onyxio." >&2
-    echo "Install Docker Engine and the Docker Compose plugin, then run this installer again." >&2
+    echo "Docker installation did not provide the docker command." >&2
     exit 1
+  fi
+  if ! docker compose version >/dev/null 2>&1 && ! docker-compose version >/dev/null 2>&1; then
+    echo "Docker Compose is still unavailable after installing prerequisites." >&2
+    exit 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl enable --now docker
+    fi
+    if ! docker info >/dev/null 2>&1; then
+      echo "Docker is installed, but its daemon is not reachable. Start Docker and rerun the installer." >&2
+      exit 1
+    fi
   fi
 }
 
@@ -981,8 +1043,8 @@ print_philips_bootstrap_summary() {
 
 main() {
   require_root
-  require_docker
   require_clean_install_dir
+  require_docker
   if ! is_cloud_install; then
     require_network_agent_dependencies
   fi
