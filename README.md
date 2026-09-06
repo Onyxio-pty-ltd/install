@@ -49,7 +49,7 @@ Install the cloud-only management console:
 
 ```bash
 curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
-  PUBLIC_SERVER_URL=https://console.example.com \
+  PUBLIC_URL=https://console.example.com \
   bash
 ```
 
@@ -151,7 +151,7 @@ sets the cloud flags that disable on-prem services.
 
 ```bash
 curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
-  PUBLIC_SERVER_URL=https://console.example.com \
+  PUBLIC_URL=https://console.example.com \
   ONYXIO_MANAGEMENT_VERSION=latest \
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
   ONYXIO_REGISTRY_TOKEN=TOKEN \
@@ -229,8 +229,9 @@ SMTP_USER=YOUR_SMTP_USERNAME
 SMTP_PASSWORD='YOUR_SMTP_PASSWORD'
 ```
 
-The installer saves these settings in its private `.env` file and sets
-`PUBLIC_URL` to the resolved `PUBLIC_SERVER_URL` for password setup links.
+The installer saves these settings and `PUBLIC_URL` in its private `.env` file.
+`PUBLIC_URL` is the single public address for the management console and links
+in password setup emails, mentions, and project notifications.
 SMTP requires a host and sender address, plus credentials if your mail server
 requires authentication. If `EMAIL_PROVIDER` is omitted, the app selects SMTP
 when `SMTP_HOST` is supplied; otherwise email is disabled in production. If
@@ -238,9 +239,10 @@ when `SMTP_HOST` is supplied; otherwise email is disabled in production. If
 STARTTLS when offered on other ports (587 by default). Without SMTP, enter a
 password manually when adding a team member.
 
-For an existing installation, add `PUBLIC_URL` and the email settings to
-`/opt/onyxio-management/.env`, then run `docker compose up -d onyxio` from that
-directory to recreate the app container. Use your chosen install directory if
+For an existing installation, keep `PUBLIC_URL` set to the console address and
+remove the old `PUBLIC_SERVER_URL` and `PUBLIC_APP_URL` entries from
+`/opt/onyxio-management/.env`. Add the email settings as needed, then run
+`docker compose up -d onyxio` from that directory to recreate the app container. Use your chosen install directory if
 different. The installer only supports fresh installations.
 
 The Ops repo's `.github/workflows/ci.yml` builds and publishes the management

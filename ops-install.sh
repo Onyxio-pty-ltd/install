@@ -9,7 +9,7 @@ HTTPS_PROXY_IMAGE="${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
 REGISTRY="${ONYXIO_REGISTRY:-ghcr.io}"
 REGISTRY_USERNAME="${ONYXIO_REGISTRY_USERNAME:-}"
 REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
-PUBLIC_SERVER_URL="${PUBLIC_SERVER_URL:-}"
+PUBLIC_URL="${PUBLIC_URL:-}"
 # Keep the management stack separate from the platform's host ports.
 PORT="${PORT:-8081}"
 POSTGRES_PORT="${POSTGRES_PORT:-5433}"
@@ -25,7 +25,7 @@ This installer does not configure on-prem services, casting hosts, Philips
 WebServices, or host network agents.
 
 Required:
-  PUBLIC_SERVER_URL=https://console.example.com
+  PUBLIC_URL=https://console.example.com
 
 Options:
   --version VERSION       Image tag to install. Defaults to latest.
@@ -37,7 +37,7 @@ Options:
   -h, --help              Show this help.
 
 Environment:
-  PUBLIC_SERVER_URL=https://console.example.com
+  PUBLIC_URL=https://console.example.com
   ONYXIO_INSTALL_DIR=/opt/onyxio-management
   ONYXIO_MANAGEMENT_VERSION=latest
   ONYXIO_MANAGEMENT_IMAGE=ghcr.io/onyxio-pty-ltd/management:latest
@@ -53,7 +53,7 @@ Environment:
   HTTPS_PORT=8443
   ONYXIO_SKIP_WATCHDOG=true
 
-Optional team invitation email (PUBLIC_URL is set from the public cloud URL):
+Optional team invitation email (links use PUBLIC_URL):
   EMAIL_PROVIDER=smtp
   EMAIL_FROM='Onyxio <no-reply@example.com>'
   SMTP_HOST=smtp.example.com
@@ -110,11 +110,11 @@ while [ "$#" -gt 0 ]; do
         echo "--public-url requires a URL." >&2
         exit 1
       fi
-      PUBLIC_SERVER_URL="$2"
+      PUBLIC_URL="$2"
       shift 2
       ;;
     --public-url=*)
-      PUBLIC_SERVER_URL="${1#*=}"
+      PUBLIC_URL="${1#*=}"
       shift
       ;;
     --port)
@@ -303,7 +303,7 @@ bool_true() {
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer with sudo:" >&2
-    echo "  curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env PUBLIC_SERVER_URL=https://console.example.com bash" >&2
+    echo "  curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env PUBLIC_URL=https://console.example.com bash" >&2
     exit 1
   fi
 }
@@ -386,8 +386,8 @@ require_clean_install_dir() {
   fi
 }
 
-resolve_public_server_url() {
-  local public_url="$PUBLIC_SERVER_URL"
+resolve_public_url() {
+  local public_url="$PUBLIC_URL"
 
   if [ -z "$public_url" ] && [ -n "${HTTPS_HOST:-}" ]; then
     public_url="https://${HTTPS_HOST}"
@@ -398,7 +398,7 @@ resolve_public_server_url() {
   fi
 
   public_url="$(strip_trailing_slash "$public_url")"
-  require_http_url "PUBLIC_SERVER_URL" "$public_url"
+  require_http_url "PUBLIC_URL" "$public_url"
   echo "$public_url"
 }
 
@@ -568,8 +568,6 @@ ONYXIO_MANAGEMENT_VERSION=${VERSION}
 ONYXIO_MANAGEMENT_IMAGE=${APP_IMAGE}
 POSTGRES_IMAGE=${POSTGRES_IMAGE}
 
-PUBLIC_SERVER_URL=${public_url}
-PUBLIC_APP_URL=${public_url}
 PUBLIC_URL=${public_url}
 CORS_ORIGIN=${public_url}
 
@@ -831,7 +829,7 @@ main() {
   fi
 
   local public_url
-  public_url="$(resolve_public_server_url)"
+  public_url="$(resolve_public_url)"
 
   mkdir -p \
     "$INSTALL_DIR/data/backend/license" \
@@ -862,7 +860,7 @@ main() {
 
   echo
   echo "Onyxio management is running."
-  echo "Console: $(env_value "$INSTALL_DIR/.env" PUBLIC_APP_URL)/"
+  echo "Console: $(env_value "$INSTALL_DIR/.env" PUBLIC_URL)/"
   print_https_summary
   echo
   echo "Install directory: ${INSTALL_DIR}"

@@ -10,7 +10,7 @@ ROOT = Path(__file__).parent
 
 
 class OpsPortTests(unittest.TestCase):
-    def generate(self, directory, **overrides):
+    def generate(self, directory, args=(), **overrides):
         source = (ROOT / 'ops-install.sh').read_text().rsplit('\nmain "$@"', 1)[0]
         env = {
             'PATH': os.environ['PATH'],
@@ -18,15 +18,16 @@ class OpsPortTests(unittest.TestCase):
             'ONYXIO_INSTALL_DIR': str(directory),
             'ONYXIO_ENABLE_HTTPS': 'true',
             'HTTPS_HOST': 'support.example.com',
+            'PUBLIC_URL': 'https://support.example.com',
             **overrides,
         }
         result = subprocess.run(
             ['/bin/bash', '-c', source + '''
 write_compose_file
 write_https_files
-write_env_file https://support.example.com
+write_env_file "$(resolve_public_url)"
 configure_https_env
-'''], env=env, text=True, capture_output=True,
+''', 'ops-install.sh', *args], env=env, text=True, capture_output=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         config = subprocess.run(
@@ -53,6 +54,9 @@ configure_https_env
             self.assertEqual(ports, {5433, 8081, 8443})
             self.assertIn('@127.0.0.1:5433/', app['DATABASE_URL'])
             self.assertEqual(proxy['PORT'], app['PORT'])
+            self.assertEqual(app['PUBLIC_URL'], 'https://support.example.com')
+            self.assertNotIn('PUBLIC_SERVER_URL', app)
+            self.assertNotIn('PUBLIC_APP_URL', app)
 
     def test_custom_ports_reach_database_app_and_proxy(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -65,6 +69,14 @@ configure_https_env
             self.assertIn('@127.0.0.1:15433/', (root / '.env').read_text())
             self.assertEqual(services['https-proxy']['environment']['PORT'], '18081')
             self.assertEqual(services['https-proxy']['environment']['HTTPS_PORT'], '18443')
+
+    def test_public_url_option_overrides_environment_and_reaches_container(self):
+        for args in [('--public-url', 'https://override.example.com/'),
+                     ('--public-url=https://override.example.com/',)]:
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as directory:
+                services = self.generate(Path(directory), args=args)
+                self.assertEqual(services['onyxio']['environment']['PUBLIC_URL'],
+                                 'https://override.example.com')
 
 
 if __name__ == '__main__':
