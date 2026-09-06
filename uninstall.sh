@@ -79,6 +79,16 @@ compose_available() {
     { docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null 2>&1; }
 }
 
+installation_name() {
+  # Installed metadata also identifies management installs in custom directories.
+  if grep -Eq '^ONYXIO_MANAGEMENT_(IMAGE|VERSION)=' "$INSTALL_DIR/.env" 2>/dev/null ||
+    [ "$(basename "$INSTALL_DIR")" = "onyxio-management" ]; then
+    echo "onyxio-management"
+  else
+    echo "onyxio"
+  fi
+}
+
 confirm() {
   case "$(printf '%s' "$ASSUME_YES" | tr '[:upper:]' '[:lower:]')" in
     y | yes | true | 1)
@@ -86,7 +96,11 @@ confirm() {
       ;;
   esac
 
-  echo "This will uninstall Onyxio from:"
+  local install_name confirmation
+  install_name="$(installation_name)"
+  confirmation="uninstall ${install_name}"
+
+  echo "This will uninstall ${install_name} from:"
   echo "  ${INSTALL_DIR}"
   if [ "$KEEP_DATA" = "true" ]; then
     echo "Persistent data will be kept."
@@ -94,7 +108,7 @@ confirm() {
     echo "Persistent data, uploads, TLS certificates, and config will be deleted."
   fi
   echo
-  printf "Type 'uninstall onyxio' to continue: "
+  printf "Type '%s' to continue: " "$confirmation"
   local answer
   if [ -r /dev/tty ]; then
     read -r answer </dev/tty
@@ -103,7 +117,7 @@ confirm() {
     echo "Cannot prompt for confirmation; rerun with --yes or ONYXIO_UNINSTALL_CONFIRM=true." >&2
     exit 1
   fi
-  if [ "$answer" != "uninstall onyxio" ]; then
+  if [ "$answer" != "$confirmation" ]; then
     echo "Uninstall cancelled."
     exit 1
   fi
@@ -171,6 +185,8 @@ remove_leftover_containers() {
   local project_name
   project_name="$(basename "$INSTALL_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')"
 
+  # Name prefixes overlap: "onyxio" also matches "onyxio-management".
+  # Compose labels identify ownership without touching the other stack.
   docker ps -a \
     --filter "label=com.docker.compose.project=${project_name}" \
     --format '{{.ID}}' |
@@ -178,11 +194,6 @@ remove_leftover_containers() {
       [ -n "$container_id" ] && docker rm -f "$container_id" >/dev/null
     done
 
-  docker ps -a --format '{{.ID}} {{.Names}}' |
-    awk -v project="$project_name" '$2 ~ "^" project "([-_]|$)" { print $1 }' |
-    while IFS= read -r container_id; do
-      [ -n "$container_id" ] && docker rm -f "$container_id" >/dev/null
-    done
 }
 
 remove_watchdog_service() {
@@ -263,6 +274,8 @@ remove_install_dir() {
 main() {
   require_root
   assert_safe_install_dir
+  local install_name
+  install_name="$(installation_name)"
   confirm
 
   remove_watchdog
@@ -276,7 +289,7 @@ main() {
   fi
 
   echo
-  echo "Onyxio uninstall complete."
+  echo "${install_name} uninstall complete."
   echo "Docker itself was not removed."
 }
 

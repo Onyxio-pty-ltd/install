@@ -10,7 +10,10 @@ REGISTRY="${ONYXIO_REGISTRY:-ghcr.io}"
 REGISTRY_USERNAME="${ONYXIO_REGISTRY_USERNAME:-}"
 REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
 PUBLIC_SERVER_URL="${PUBLIC_SERVER_URL:-}"
-PORT="${PORT:-80}"
+# Keep the management stack separate from the platform's host ports.
+PORT="${PORT:-8081}"
+POSTGRES_PORT="${POSTGRES_PORT:-5433}"
+HTTPS_PORT="${HTTPS_PORT:-8443}"
 SKIP_WATCHDOG="${ONYXIO_SKIP_WATCHDOG:-false}"
 
 usage() {
@@ -29,23 +32,25 @@ Options:
   --image IMAGE           Full app image reference. Overrides --version.
   --install-dir PATH      Install directory. Defaults to /opt/onyxio-management.
   --public-url URL        Public cloud URL for the console.
-  --port PORT             Host HTTP port. Defaults to 80.
+  --port PORT             Host HTTP port. Defaults to 8081.
   --skip-watchdog         Do not install the systemd watchdog.
   -h, --help              Show this help.
 
 Environment:
   PUBLIC_SERVER_URL=https://console.example.com
   ONYXIO_INSTALL_DIR=/opt/onyxio-management
-  ONYXIO_MANAGEMENT_VERSION=2026.09.05
-  ONYXIO_MANAGEMENT_IMAGE=ghcr.io/onyxio-pty-ltd/management:2026.09.05
+  ONYXIO_MANAGEMENT_VERSION=latest
+  ONYXIO_MANAGEMENT_IMAGE=ghcr.io/onyxio-pty-ltd/management:latest
   ONYXIO_POSTGRES_IMAGE=postgres:15
+  PORT=8081
+  POSTGRES_PORT=5433
   ONYXIO_REGISTRY=ghcr.io
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME
   ONYXIO_REGISTRY_TOKEN=TOKEN
   ONYXIO_ENABLE_HTTPS=true
   HTTPS_HOST=console.example.com
   HTTPS_LISTEN_ADDR=0.0.0.0
-  HTTPS_PORT=443
+  HTTPS_PORT=8443
   ONYXIO_SKIP_WATCHDOG=true
 
 Optional team invitation email (PUBLIC_URL is set from the public cloud URL):
@@ -455,7 +460,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-onyxio_management}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -475,8 +480,8 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-onyxio_management}
-      PORT: ${PORT:-80}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_PORT:-5433}/${POSTGRES_DB:-onyxio_management}
+      PORT: ${PORT:-8081}
     volumes:
       - ./data/backend:/app/backend/data
       - ./data/uploads:/app/backend/uploads
@@ -497,8 +502,8 @@ services:
     environment:
       HTTPS_HOST: ${HTTPS_HOST:-_}
       HTTPS_LISTEN_ADDR: ${HTTPS_LISTEN_ADDR:-0.0.0.0}
-      HTTPS_PORT: ${HTTPS_PORT:-443}
-      PORT: ${PORT:-80}
+      HTTPS_PORT: ${HTTPS_PORT:-8443}
+      PORT: ${PORT:-8081}
       TLS_CERT_FILE: ${TLS_CERT_FILE:-/etc/onyxio/tls/fullchain.pem}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-/etc/onyxio/tls/privkey.pem}
       NGINX_ENVSUBST_FILTER: "^(HTTPS_HOST|HTTPS_LISTEN_ADDR|HTTPS_PORT|PORT|TLS_CERT_FILE|TLS_KEY_FILE)$"
@@ -593,8 +598,8 @@ PHILIPS_WEBSERVICES_ENABLED=false
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${postgres_password}
 POSTGRES_DB=onyxio_management
-POSTGRES_PORT=5432
-DATABASE_URL=postgresql://postgres:${postgres_password}@127.0.0.1:5432/onyxio_management
+POSTGRES_PORT=${POSTGRES_PORT}
+DATABASE_URL=postgresql://postgres:${postgres_password}@127.0.0.1:${POSTGRES_PORT}/onyxio_management
 
 JWT_SECRET=${jwt_secret}
 ONYXIO_LICENSE_PRIVATE_KEY_FILE=/app/backend/data/license/private-key.pem
@@ -625,7 +630,7 @@ configure_https_env() {
   fi
 
   listen_addr="${HTTPS_LISTEN_ADDR:-0.0.0.0}"
-  https_port="${HTTPS_PORT:-443}"
+  https_port="${HTTPS_PORT:-8443}"
   proxy_image="${HTTPS_PROXY_IMAGE:-$HTTPS_PROXY_IMAGE}"
 
   set_env_value "$env_file" ONYXIO_ENABLE_HTTPS true
@@ -664,7 +669,7 @@ wait_for_startup() {
   local timeout_seconds="${ONYXIO_INSTALL_STARTUP_TIMEOUT_SECONDS:-120}"
   local port
   port="$(env_value "$INSTALL_DIR/.env" PORT)"
-  port="${port:-80}"
+  port="${port:-8081}"
 
   echo "Waiting for Onyxio management startup checks to pass."
   local start_time
@@ -787,7 +792,7 @@ print_https_summary() {
   https_host="$(env_value "$env_file" HTTPS_HOST)"
   listen_addr="$(env_value "$env_file" HTTPS_LISTEN_ADDR)"
   https_port="$(env_value "$env_file" HTTPS_PORT)"
-  https_port="${https_port:-443}"
+  https_port="${https_port:-8443}"
 
   echo
   echo "HTTPS front door:"
@@ -814,6 +819,14 @@ main() {
 
   if ! valid_port "$PORT"; then
     echo "PORT must be an integer from 1 to 65535." >&2
+    exit 1
+  fi
+  if ! valid_port "$POSTGRES_PORT"; then
+    echo "POSTGRES_PORT must be an integer from 1 to 65535." >&2
+    exit 1
+  fi
+  if ! valid_port "$HTTPS_PORT"; then
+    echo "HTTPS_PORT must be an integer from 1 to 65535." >&2
     exit 1
   fi
 

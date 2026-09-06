@@ -152,7 +152,7 @@ sets the cloud flags that disable on-prem services.
 ```bash
 curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
   PUBLIC_SERVER_URL=https://console.example.com \
-  ONYXIO_MANAGEMENT_VERSION=2026.09.05 \
+  ONYXIO_MANAGEMENT_VERSION=latest \
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
   ONYXIO_REGISTRY_TOKEN=TOKEN \
   bash
@@ -162,16 +162,60 @@ Optional variables:
 
 ```bash
 ONYXIO_INSTALL_DIR=/opt/onyxio-management
-ONYXIO_MANAGEMENT_VERSION=2026.09.05
-ONYXIO_MANAGEMENT_IMAGE=ghcr.io/onyxio-pty-ltd/management:2026.09.05
+ONYXIO_MANAGEMENT_VERSION=latest
+ONYXIO_MANAGEMENT_IMAGE=ghcr.io/onyxio-pty-ltd/management:latest
 ONYXIO_POSTGRES_IMAGE=postgres:15
-PORT=80
+PORT=8081
+POSTGRES_PORT=5433
 ONYXIO_ENABLE_HTTPS=true
 HTTPS_HOST=console.example.com
 HTTPS_LISTEN_ADDR=0.0.0.0
-HTTPS_PORT=443
+HTTPS_PORT=8443
 ONYXIO_SKIP_WATCHDOG=true
 ```
+
+Ops can run alongside the Onyxio platform on the same host. Its default host
+ports are HTTP `8081`, loopback Postgres `5433`, and optional HTTPS `8443`;
+the platform uses `80`, `5432`, and `443`. Set `PORT`, `POSTGRES_PORT`, or
+`HTTPS_PORT` if another service already occupies an Ops port. The app still uses
+host networking, so each listener needs a distinct host port. Each stack has
+its own install directory, Compose project, database data, and watchdog service.
+
+For `https://support.onyxio.app` on standard port `443`, configure the host's
+existing reverse proxy to route that hostname to `http://127.0.0.1:8081`.
+Forward HTTP requests and WebSocket upgrades to that same upstream port; there
+is no separate WebSocket port. The bundled Ops proxy already forwards the
+`Upgrade` and `Connection` headers to the app's `PORT`.
+Leave `ONYXIO_ENABLE_HTTPS` unset when that proxy handles TLS. For direct access
+through the optional Ops HTTPS proxy, use an explicit port in the public URL,
+such as `https://support.onyxio.app:8443`, and provide its TLS certificates.
+The installer does not configure hostname routing in an existing proxy.
+
+For an installation created with the old defaults, update its existing config
+and recreate the management containers. This preserves credentials and data:
+
+```bash
+cd /opt/onyxio-management
+sudo cp -p .env .env.before-port-change
+sudo sed -i \
+  -e 's/^PORT=.*/PORT=8081/' \
+  -e 's/^POSTGRES_PORT=.*/POSTGRES_PORT=5433/' \
+  -e '/^DATABASE_URL=/s/@127\.0\.0\.1:[0-9]*\//@127.0.0.1:5433\//' \
+  -e 's/^HTTPS_PORT=.*/HTTPS_PORT=8443/' \
+  .env
+sudo docker compose -f docker-compose.yml up -d
+```
+
+If the Ops HTTPS proxy is enabled and its certificates are installed, include
+`-f docker-compose.https.yml` before `up -d`. If installation previously failed
+before startup completed, this recovery starts the containers but does not
+install the watchdog service that the installer normally creates afterward.
+
+To uninstall management, run `sudo /opt/onyxio-management/uninstall.sh`. Its
+confirmation phrase is `uninstall onyxio-management`; the platform uninstaller
+continues to require `uninstall onyxio`. Management installs in custom directories
+are identified from their `.env` metadata. The installed wrapper downloads the
+shared uninstaller on each run.
 
 For emailed team invitations, pass these additional variables to `sudo env`:
 
@@ -199,7 +243,7 @@ For an existing installation, add `PUBLIC_URL` and the email settings to
 directory to recreate the app container. Use your chosen install directory if
 different. The installer only supports fresh installations.
 
-The Ops repo's `.github/workflows/ops-ci.yml` builds and publishes the management
+The Ops repo's `.github/workflows/ci.yml` builds and publishes the management
 image after tests and a container smoke test pass. Its Dockerfile installs
 dependencies from the current backend lockfile (including `nodemailer`), builds
 the frontend, and includes `/app/shared/projectKey.mts` for the backend's runtime
