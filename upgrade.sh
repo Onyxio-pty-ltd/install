@@ -192,31 +192,6 @@ set_env_default() {
   fi
 }
 
-remove_env_value() {
-  local file="$1"
-  local key="$2"
-
-  if ! grep -q "^${key}=" "$file"; then
-    return
-  fi
-
-  local tmp
-  tmp="$(mktemp)"
-  awk -v key="$key" '$0 !~ "^" key "=" { print }' "$file" > "$tmp"
-  mv "$tmp" "$file"
-}
-
-set_env_value_if_current() {
-  local file="$1"
-  local key="$2"
-  local current="$3"
-  local replacement="$4"
-
-  if [ "$(env_value "$file" "$key")" = "$current" ]; then
-    set_env_value "$file" "$key" "$replacement"
-  fi
-}
-
 random_secret() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 32
@@ -778,26 +753,6 @@ ensure_env_defaults() {
   set_env_default "$env_file" ONYXIO_LICENSE_PUBLIC_KEY_FILE /app/backend/uploads/license/public-key.pem
 }
 
-migrate_single_port_env() {
-  local env_file="$INSTALL_DIR/.env"
-  local server_ip
-
-  server_ip="$(env_value "$env_file" SERVER_IP)"
-
-  set_env_value_if_current "$env_file" PORT 4000 80
-  if [ -n "$server_ip" ]; then
-    set_env_value_if_current "$env_file" PUBLIC_SERVER_URL "http://${server_ip}:4000" "http://${server_ip}"
-    set_env_value_if_current "$env_file" PUBLIC_APP_URL "http://${server_ip}:4000" "http://${server_ip}"
-    set_env_value_if_current "$env_file" PUBLIC_TV_APP_URL "http://${server_ip}:4000/tv/" "http://${server_ip}/tv/"
-    set_env_value_if_current "$env_file" MOBILE_APP_PUBLIC_URL "http://${server_ip}:4000/mobile/" "http://${server_ip}/mobile/"
-  fi
-  set_env_value_if_current "$env_file" CASTING_CONTROL_PLANE_WS_URL "ws://127.0.0.1:4000" "ws://127.0.0.1"
-
-  remove_env_value "$env_file" WEB_SOCKET_PORT
-  remove_env_value "$env_file" PHILIPS_WEBSERVICES_PORT
-  remove_env_value "$env_file" PHILIPS_WEBSERVICES_BOOTSTRAP_PORT
-}
-
 compose_files() {
   printf '%s\n' "-f" "docker-compose.yml"
   if https_configured && tls_certificates_available; then
@@ -970,7 +925,6 @@ main() {
 
   remove_legacy_default_casting_host
   refresh_host_files
-  migrate_single_port_env
   ensure_env_defaults
   backup_database
 

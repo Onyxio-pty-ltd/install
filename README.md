@@ -463,6 +463,10 @@ HTTPS helper scripts, lifecycle wrappers, the watchdog, and the network agent, u
 `ONYXIO_VERSION` and `ONYXIO_SERVER_IMAGE` in `/opt/onyxio/.env`, pulls the new
 backend image, and recreates the Onyxio container.
 
+Upgrades preserve existing port and URL settings in `.env`, including `PORT`,
+`WEB_SOCKET_PORT`, `PHILIPS_WEBSERVICES_PORT`, and
+`PHILIPS_WEBSERVICES_BOOTSTRAP_PORT`.
+
 Pinned version:
 
 ```bash
