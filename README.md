@@ -261,8 +261,12 @@ The same full installer can run the hosted cloud backend when
 `ONYXIO_DEPLOYMENT=cloud` or `ONYXIO_CLOUD_MODE=true` is provided. In cloud
 mode the installer writes the cloud flags into `/opt/onyxio/.env`, uses
 `PUBLIC_SERVER_URL` for the admin, TV, and mobile app URLs, disables local
-casting and Philips WebServices, and disables host network changes from the
-backend.
+casting, and disables host network changes from the backend. Philips WebServices
+defaults to enabled in both cloud and on-premise installs; set
+`PHILIPS_WEBSERVICES_ENABLED=false` explicitly to disable it. Upgrades preserve
+the existing value and default to `true` when the setting is absent. Existing
+cloud installs created with `false` must change that value to `true` in
+`/opt/onyxio/.env` and recreate the backend container to enable WebServices.
 
 Cloud installs should provide a public HTTP(S) URL:
 

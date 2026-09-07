@@ -762,12 +762,12 @@ ensure_env_defaults() {
 
   set_env_default "$env_file" POSTGRES_IMAGE "${ONYXIO_POSTGRES_IMAGE:-postgres:15}"
   set_env_default "$env_file" HTTPS_PROXY_IMAGE "${ONYXIO_HTTPS_PROXY_IMAGE:-nginx:1.27-alpine}"
+  set_env_default "$env_file" PHILIPS_WEBSERVICES_ENABLED true
   if is_cloud_install; then
     set_env_value "$env_file" ONYXIO_CLOUD_MODE true
     set_env_value "$env_file" ONYXIO_DEPLOYMENT cloud
     set_env_value "$env_file" ONYXIO_NETWORK_APPLY_MODE disabled
     set_env_value "$env_file" CASTING_ENABLED false
-    set_env_value "$env_file" PHILIPS_WEBSERVICES_ENABLED false
   else
     set_env_default "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
     set_env_default "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
