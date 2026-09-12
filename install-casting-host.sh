@@ -34,7 +34,7 @@ Options:
   --control-plane-url URL       Backend/control-plane HTTP(S), WS, or WSS URL.
   --host-id HOST_ID             Stable casting host id shown in cloud settings.
   --host-name NAME              Display name shown in cloud settings.
-  --organization-ids ORG_IDS    Comma-separated cloud organization ids.
+  --site-id SITE_ID              Existing site id served by this module.
   --token TOKEN                 Casting host shared token.
   -h, --help                    Show this help.
 
@@ -48,7 +48,7 @@ Environment:
   CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
   CASTING_HOST_ID=property-a
   CASTING_HOST_NAME="Property A"
-  CASTING_HOST_ORGANIZATION_IDS=org-1
+  CASTING_HOST_SITE_ID=site-1
   CASTING_HOST_TOKEN=shared-secret
   ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 EOF
@@ -132,16 +132,16 @@ while [ "$#" -gt 0 ]; do
       CASTING_HOST_NAME="${1#*=}"
       shift
       ;;
-    --organization-ids)
+    --site-id)
       if [ "$#" -lt 2 ]; then
-        echo "--organization-ids requires a value." >&2
+        echo "--site-id requires a value." >&2
         exit 1
       fi
-      CASTING_HOST_ORGANIZATION_IDS="${2:-}"
+      CASTING_HOST_SITE_ID="${2:-}"
       shift 2
       ;;
-    --organization-ids=*)
-      CASTING_HOST_ORGANIZATION_IDS="${1#*=}"
+    --site-id=*)
+      CASTING_HOST_SITE_ID="${1#*=}"
       shift
       ;;
     --token)
@@ -510,7 +510,7 @@ services:
       NODE_ENV: production
       CASTING_HOST_ID: ${CASTING_HOST_ID}
       CASTING_HOST_NAME: ${CASTING_HOST_NAME}
-      CASTING_HOST_ORGANIZATION_IDS: ${CASTING_HOST_ORGANIZATION_IDS}
+      CASTING_HOST_SITE_ID: ${CASTING_HOST_SITE_ID}
       CASTING_HOST_TOKEN: ${CASTING_HOST_TOKEN}
       CASTING_HOST_VERSION: ${CASTING_HOST_VERSION}
       CASTING_HOST_RUNTIME_ENABLED: ${CASTING_HOST_RUNTIME_ENABLED:-true}
@@ -590,25 +590,25 @@ main() {
   touch "$INSTALL_DIR/.env"
   install_network_agent
 
-  local env_file control_plane_url host_id host_name organization_ids host_token
+  local env_file control_plane_url host_id host_name site_id host_token
   env_file="$INSTALL_DIR/.env"
   control_plane_url="${CASTING_CONTROL_PLANE_WS_URL:-$(env_value "$env_file" CASTING_CONTROL_PLANE_WS_URL)}"
   host_id="${CASTING_HOST_ID:-$(env_value "$env_file" CASTING_HOST_ID)}"
   host_name="${CASTING_HOST_NAME:-$(env_value "$env_file" CASTING_HOST_NAME)}"
-  organization_ids="${CASTING_HOST_ORGANIZATION_IDS:-$(env_value "$env_file" CASTING_HOST_ORGANIZATION_IDS)}"
+  site_id="${CASTING_HOST_SITE_ID:-$(env_value "$env_file" CASTING_HOST_SITE_ID)}"
   host_token="${CASTING_HOST_TOKEN:-$(env_value "$env_file" CASTING_HOST_TOKEN)}"
 
   control_plane_url="$(prompt "Control plane URL" "$control_plane_url")"
   host_id="$(prompt "Casting host id" "$host_id")"
   host_name="$(prompt "Casting host name" "${host_name:-$host_id}")"
-  organization_ids="$(prompt "Casting host organization ids" "$organization_ids")"
+  site_id="$(prompt "Casting host site id" "$site_id")"
   if [ -z "$host_token" ]; then
     host_token="$(prompt_secret "Casting host token")"
   fi
 
   require_value "CASTING_CONTROL_PLANE_WS_URL" "$control_plane_url"
   require_value "CASTING_HOST_ID" "$host_id"
-  require_value "CASTING_HOST_ORGANIZATION_IDS" "$organization_ids"
+  require_value "CASTING_HOST_SITE_ID" "$site_id"
   require_value "CASTING_HOST_TOKEN" "$host_token"
   validate_control_plane_url "$control_plane_url"
 
@@ -617,7 +617,7 @@ main() {
   set_env_value "$env_file" CASTING_CONTROL_PLANE_WS_URL "$control_plane_url"
   set_env_value "$env_file" CASTING_HOST_ID "$host_id"
   set_env_value "$env_file" CASTING_HOST_NAME "$host_name"
-  set_env_value "$env_file" CASTING_HOST_ORGANIZATION_IDS "$organization_ids"
+  set_env_value "$env_file" CASTING_HOST_SITE_ID "$site_id"
   set_env_value "$env_file" CASTING_HOST_TOKEN "$host_token"
   set_env_value "$env_file" CASTING_HOST_VERSION "${CASTING_HOST_VERSION:-$VERSION}"
   set_env_value "$env_file" CASTING_HOST_RUNTIME_ENABLED true

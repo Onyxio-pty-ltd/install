@@ -72,7 +72,7 @@ curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
   CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
   CASTING_HOST_ID=property-a-east \
   CASTING_HOST_NAME="Property A East" \
-  CASTING_HOST_ORGANIZATION_IDS=org-1 \
+  CASTING_HOST_SITE_ID=site-1 \
   CASTING_HOST_TOKEN=shared-secret \
   bash
 ```
@@ -255,6 +255,61 @@ This installer has no on-prem mode. It does not install a host network agent,
 casting host, TV/mobile app URLs, Philips WebServices, or license public-key
 assets for customer servers.
 
+## Connecting Ops to Cloud customers on a fresh install
+
+The Ops **Cloud customers** page fetches organizations live from the platform.
+Install platform and Ops image versions that contain the customer management API
+and Cloud customers page, respectively.
+
+Generate one random monitoring key and use the same value for both installations:
+
+```bash
+openssl rand -hex 32
+```
+
+For a new cloud platform installation:
+
+```bash
+curl -fsSL https://install.onyxio.com.au | sudo env \
+  ONYXIO_DEPLOYMENT=cloud \
+  PUBLIC_SERVER_URL=https://cloud.example.com \
+  ONYXIO_CUSTOMER_MANAGEMENT_API_KEY=YOUR_GENERATED_KEY \
+  bash
+```
+
+For a new Ops installation:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+  PUBLIC_URL=https://ops.example.com \
+  ONYXIO_CLOUD_PLATFORM_URL=https://cloud.example.com \
+  ONYXIO_CLOUD_PLATFORM_API_KEY=YOUR_GENERATED_KEY \
+  bash
+```
+
+Replace `YOUR_GENERATED_KEY` with the generated value in each command. The
+platform key must contain at least 32 characters. `PUBLIC_URL` is the Ops
+console's address; `ONYXIO_CLOUD_PLATFORM_URL` is the platform origin without an
+API path, query, or credentials. Use HTTPS for remote connections and ensure the
+Ops server can reach that address. No extra monitoring port is required.
+
+| Installer | Optional environment variables | Default |
+| --- | --- | --- |
+| Platform (`install.sh`, public root installer, online/offline package installers) | `ONYXIO_CUSTOMER_MANAGEMENT_API_KEY` | Blank; monitoring API disabled |
+| Ops (`ops-install.sh`) | `ONYXIO_CLOUD_PLATFORM_URL`, `ONYXIO_CLOUD_PLATFORM_API_KEY` | Blank; Cloud customers connection unconfigured |
+
+The installers save these values in their generated `.env` files with mode
+`0600`, and Compose passes them to the backends. For package installs, supply the
+platform key in the environment when running the package's installer. Keys are
+not generated automatically or printed by the installers. Keep them out of Git
+and frontend/Vite settings. Each key grants installation-wide monitoring access;
+use a different key for each platform installation.
+
+After installation, sign in to Ops and open **Cloud customers**. It fetches up to
+25 organizations per page through the Ops backend, with Previous, Next and Refresh
+controls. Ops does not store copies of platform organizations or synchronize them
+in the background. The first version connects to one cloud platform.
+
 ## Cloud Control Plane Installs
 
 The same full installer can run the hosted cloud backend when
@@ -313,19 +368,20 @@ Required values:
 CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
 CASTING_HOST_ID=property-a-east
 CASTING_HOST_NAME="Property A East"
-CASTING_HOST_ORGANIZATION_IDS=org-1
+CASTING_HOST_SITE_ID=site-1
 CASTING_HOST_TOKEN=shared-secret
 ```
 
 The casting host reports detected property-network interfaces to the control
-plane. The backend sends current site mappings for the organization and updates
-them when sites are added or removed. Select the guest and device roles in
+plane. The backend assigns it to the reported site, derives its organization,
+and sends that site's current mapping. Select the guest and device roles in
 Admin > Settings > Casting; those settings are sent back to the host over the
 casting control websocket. The casting host also installs the local
 `onyxio-network-agent.service` so network changes requested from Admin are
 applied on the property-network machine, not by the cloud backend.
-When multiple casting hosts register for the same organization, make sure each
-site is assigned to the intended host in the control plane.
+Create the site first and use its actual ID. Each site accepts one module;
+registration rejects conflicting assignments. When moving a module in Admin,
+update `CASTING_HOST_SITE_ID` in its environment before restarting it.
 
 Re-run the same command with a new `ONYXIO_VERSION` or `ONYXIO_SERVER_IMAGE` to
 update the casting host:
@@ -336,7 +392,7 @@ curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
   CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
   CASTING_HOST_ID=property-a-east \
   CASTING_HOST_NAME="Property A East" \
-  CASTING_HOST_ORGANIZATION_IDS=org-1 \
+  CASTING_HOST_SITE_ID=site-1 \
   CASTING_HOST_TOKEN=shared-secret \
   bash
 ```

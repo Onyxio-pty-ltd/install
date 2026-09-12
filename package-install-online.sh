@@ -29,6 +29,17 @@ detect_ips() {
   hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' || true
 }
 
+# Preserve literal monitoring credentials in Docker Compose dotenv files.
+quote_compose_env_value() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//\$/\$\$}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  printf '"%s"' "$value"
+}
+
 prompt() {
   local message="$1"
   local default_value="${2:-}"
@@ -570,7 +581,8 @@ ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 CASTING_CONTROL_PLANE_WS_URL=ws://127.0.0.1
 CASTING_HOST_ID=onprem-main
 CASTING_HOST_NAME=On-prem Main
-CASTING_HOST_ORGANIZATION_IDS=org-1
+# Set this to the existing site ID before starting a standalone casting host.
+CASTING_HOST_SITE_ID=${CASTING_HOST_SITE_ID:-}
 CASTING_HOST_TOKEN=${CASTING_HOST_TOKEN}
 
 # Casting pairings are normally cleared on checkout. This cleanup removes
@@ -590,7 +602,11 @@ GRAPHQL_BODY_LIMIT=150mb
 ONYXIO_LICENSE_DIR=/app/backend/uploads/license
 ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
 ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
+# Optional installation-wide read access for the Onyxio Ops backend.
+ONYXIO_CUSTOMER_MANAGEMENT_API_KEY=$(quote_compose_env_value "${ONYXIO_CUSTOMER_MANAGEMENT_API_KEY:-}")
 EOF
+
+  chmod 0600 .env
 
   if is_cloud_install; then
     cat >> .env <<'EOF'

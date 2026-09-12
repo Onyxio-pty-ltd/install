@@ -10,6 +10,17 @@ REGISTRY="${ONYXIO_REGISTRY:-ghcr.io}"
 REGISTRY_USERNAME="${ONYXIO_REGISTRY_USERNAME:-}"
 REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
 
+# Preserve literal monitoring credentials in Docker Compose dotenv files.
+quote_compose_env_value() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//\$/\$\$}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  printf '"%s"' "$value"
+}
+
 prompt() {
   local message="$1"
   local default_value="${2:-}"
@@ -850,7 +861,11 @@ GRAPHQL_BODY_LIMIT=150mb
 ONYXIO_LICENSE_DIR=/app/backend/uploads/license
 ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
 ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
+# Optional installation-wide read access for the Onyxio Ops backend.
+ONYXIO_CUSTOMER_MANAGEMENT_API_KEY=$(quote_compose_env_value "${ONYXIO_CUSTOMER_MANAGEMENT_API_KEY:-}")
 EOF
+
+  chmod 0600 "$INSTALL_DIR/.env"
 
   if is_cloud_install; then
     cat >> "$INSTALL_DIR/.env" <<'EOF'

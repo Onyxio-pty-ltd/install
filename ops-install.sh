@@ -53,6 +53,12 @@ Environment:
   HTTPS_PORT=8443
   ONYXIO_SKIP_WATCHDOG=true
 
+Optional live Cloud customers connection (configured on the Ops backend only):
+  ONYXIO_CLOUD_PLATFORM_URL=https://cloud.example.com
+  ONYXIO_CLOUD_PLATFORM_API_KEY=SHARED_PLATFORM_MONITORING_KEY
+  The key must match ONYXIO_CUSTOMER_MANAGEMENT_API_KEY on the platform.
+  Leave both blank to leave Cloud customers unconfigured.
+
 Optional team invitation email (links use PUBLIC_URL):
   EMAIL_PROVIDER=smtp
   EMAIL_FROM='Onyxio <no-reply@example.com>'
@@ -570,6 +576,9 @@ POSTGRES_IMAGE=${POSTGRES_IMAGE}
 
 PUBLIC_URL=${public_url}
 CORS_ORIGIN=${public_url}
+
+ONYXIO_CLOUD_PLATFORM_URL=$(quote_compose_env_value "${ONYXIO_CLOUD_PLATFORM_URL:-}")
+ONYXIO_CLOUD_PLATFORM_API_KEY=$(quote_compose_env_value "${ONYXIO_CLOUD_PLATFORM_API_KEY:-}")
 
 PORT=${PORT}
 DATA_FILE=/app/backend/data/app-data.json

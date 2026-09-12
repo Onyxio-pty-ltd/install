@@ -36,7 +36,10 @@ class PhilipsDefaultsTests(unittest.TestCase):
                     ).group()
                     start = source.index('  cat > .env <<EOF')
                     end = source.index('\nelse\n  echo "Onyxio is already installed', start)
-                    script = cloud_function + '\n' + source[start:end]
+                    quote_function = re.search(
+                        r'^quote_compose_env_value\(\) \{\n.*?^\}', source, re.M | re.S
+                    ).group()
+                    script = quote_function + '\n' + cloud_function + '\n' + source[start:end]
                     env.update(VERSION='test', SERVER_IP='192.0.2.1',
                                PUBLIC_URL='http://example.test', NETWORK_APPLY_MODE='agent',
                                CASTING_HOST_TOKEN='test', POSTGRES_PASSWORD='test',
