@@ -1,4 +1,4 @@
-"""Verify fresh installer monitoring credentials reach Compose without disclosure."""
+"""Verify installer integration settings reach Compose without disclosure."""
 import json
 import os
 from pathlib import Path
@@ -39,7 +39,7 @@ class CustomerManagementConfigTests(unittest.TestCase):
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             for name, value in overrides.items():
-                if 'API_KEY' in name and value:
+                if any(marker in name for marker in ('API_KEY', 'TOKEN', 'SUPPORT_INTEGRATIONS')) and value:
                     self.assertNotIn(value, result.stdout + result.stderr)
             self.assertEqual((root / '.env').stat().st_mode & 0o777, 0o600)
             (root / 'compose.yml').write_text('services:\n  app:\n    image: example:test\n    env_file: .env\n')
@@ -58,7 +58,7 @@ class CustomerManagementConfigTests(unittest.TestCase):
             self.assertEqual(resolved.returncode, 0, resolved.stderr)
             values = dict(line.split('=', 1) for line in resolved.stdout.splitlines() if '=' in line)
             for name, value in overrides.items():
-                if 'API_KEY' in name:
+                if any(marker in name for marker in ('API_KEY', 'TOKEN', 'SUPPORT_INTEGRATIONS')):
                     self.assertEqual(values[name], value)
                     self.assertEqual(service_env[name], value.replace('$', '$$'))
             return {name: value.replace('$$', '$') if isinstance(value, str) else value
@@ -86,6 +86,43 @@ class CustomerManagementConfigTests(unittest.TestCase):
         ops = self.generate('ops-install.sh', {})
         self.assertEqual(ops['ONYXIO_CLOUD_PLATFORM_API_KEY'], '')
         self.assertEqual(ops['ONYXIO_CLOUD_PLATFORM_URL'], '')
+
+    def test_support_is_disabled_by_default(self):
+        for filename in PLATFORM_INSTALLERS:
+            with self.subTest(filename=filename):
+                values = self.generate(filename, {})
+                self.assertEqual(values['ONYXIO_SUPPORT_URL'], '')
+                self.assertEqual(values['ONYXIO_SUPPORT_TOKEN'], '')
+        ops = self.generate('ops-install.sh', {})
+        self.assertEqual(json.loads(ops['SUPPORT_INTEGRATIONS']), [])
+        self.assertEqual(ops['SUPPORT_REPLY_TO'], '')
+        self.assertEqual(ops['SUPPORT_INBOX'], '')
+
+    def test_support_settings_survive_compose_in_cloud_and_on_prem(self):
+        token = 'support-secret-0123456789-$VALUE-${OTHER}-"quote"-\\slash'
+        for filename in PLATFORM_INSTALLERS:
+            for deployment in ('cloud', 'on-prem'):
+                with self.subTest(filename=filename, deployment=deployment):
+                    values = self.generate(filename, {
+                        'ONYXIO_DEPLOYMENT': deployment,
+                        'ONYXIO_SUPPORT_URL': 'https://ops.example.test:8443',
+                        'ONYXIO_SUPPORT_TOKEN': token,
+                    })
+                    self.assertEqual(values['ONYXIO_SUPPORT_URL'], 'https://ops.example.test:8443')
+                    self.assertEqual(values['ONYXIO_SUPPORT_TOKEN'], token)
+        integrations = [
+            {'id': 'cloud-production', 'kind': 'cloud', 'token': token},
+            {'id': 'hotel', 'kind': 'on-prem', 'token': token + '-hotel',
+             'clientId': 'client-123', 'installationId': 'onyxio-hotel'},
+        ]
+        ops = self.generate('ops-install.sh', {
+            'SUPPORT_INTEGRATIONS': json.dumps(integrations),
+            'SUPPORT_REPLY_TO': 'Support Team <support@example.test>',
+            'SUPPORT_INBOX': 'tickets@example.test',
+        })
+        self.assertEqual(json.loads(ops['SUPPORT_INTEGRATIONS']), integrations)
+        self.assertEqual(ops['SUPPORT_REPLY_TO'], 'Support Team <support@example.test>')
+        self.assertEqual(ops['SUPPORT_INBOX'], 'tickets@example.test')
 
     def test_public_installer_matches_script(self):
         self.assertEqual((ROOT / 'install.sh').read_bytes(), (ROOT / 'index.html').read_bytes())

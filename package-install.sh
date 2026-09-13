@@ -25,7 +25,35 @@ random_secret() {
   fi
 }
 
-# Preserve literal monitoring credentials in Docker Compose dotenv files.
+# These entrypoints also run standalone, without a shared shell library.
+validate_support_config() {
+  local url="${ONYXIO_SUPPORT_URL:-}" token="${ONYXIO_SUPPORT_TOKEN:-}"
+  if [ -z "$url" ] && [ -z "$token" ]; then
+    return
+  fi
+  if [ -z "$url" ] || [ "${#token}" -lt 32 ]; then
+    echo "Configure ONYXIO_SUPPORT_URL and ONYXIO_SUPPORT_TOKEN (at least 32 characters) together." >&2
+    return 1
+  fi
+
+  # An origin only: no credentials, path, query, fragment, or whitespace.
+  local origin_pattern='^(https?)://([a-zA-Z0-9.-]+|\[[0-9a-fA-F:]+\])(:([0-9]+))?/?$'
+  if [[ ! "$url" =~ $origin_pattern ]]; then
+    echo "ONYXIO_SUPPORT_URL must be an HTTPS origin, without credentials, a path, query, or fragment." >&2
+    return 1
+  fi
+  local scheme="${BASH_REMATCH[1]}" host="${BASH_REMATCH[2]}" port="${BASH_REMATCH[4]}"
+  if [ "$scheme" = http ] && [ "$host" != localhost ] && [ "$host" != 127.0.0.1 ]; then
+    echo "ONYXIO_SUPPORT_URL requires HTTPS except for localhost or 127.0.0.1 development." >&2
+    return 1
+  fi
+  if [ -n "$port" ] && { [ "${#port}" -gt 5 ] || [ "$((10#$port))" -lt 1 ] || [ "$((10#$port))" -gt 65535 ]; }; then
+    echo "ONYXIO_SUPPORT_URL port must be from 1 to 65535." >&2
+    return 1
+  fi
+}
+
+# Preserve literal credentials and JSON in Docker Compose dotenv files.
 quote_compose_env_value() {
   local value="$1"
   value="${value//\\/\\\\}"
@@ -516,6 +544,7 @@ fi
 
 ENV_CREATED=false
 if [ ! -f .env ]; then
+  validate_support_config
   ENV_CREATED=true
   if [ -n "${SERVER_IP:-}" ]; then
     SERVER_IP="${SERVER_IP}"
@@ -587,6 +616,9 @@ ONYXIO_LICENSE_PUBLIC_KEY_FILE=/app/backend/uploads/license/public-key.pem
 ONYXIO_INSTALLATION_ID=${ONYXIO_INSTALLATION_ID:-}
 # Optional installation-wide read access for the Onyxio Ops backend.
 ONYXIO_CUSTOMER_MANAGEMENT_API_KEY=$(quote_compose_env_value "${ONYXIO_CUSTOMER_MANAGEMENT_API_KEY:-}")
+# Optional customer support. Use a dedicated token registered in Ops.
+ONYXIO_SUPPORT_URL=$(quote_compose_env_value "${ONYXIO_SUPPORT_URL:-}")
+ONYXIO_SUPPORT_TOKEN=$(quote_compose_env_value "${ONYXIO_SUPPORT_TOKEN:-}")
 EOF
 
   chmod 0600 .env

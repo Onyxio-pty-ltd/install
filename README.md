@@ -310,6 +310,105 @@ After installation, sign in to Ops and open **Cloud customers**. It fetches up t
 controls. Ops does not store copies of platform organizations or synchronize them
 in the background. The first version connects to one cloud platform.
 
+## Customer support from the admin panel
+
+Install Platform and Ops image versions containing the customer support feature.
+The form is hosted by Ops at `/support/new`, using the same public origin as the
+Ops console. Both the Platform backend and the customer's browser must be able
+to reach that origin over HTTPS. No new inbound port or container is required.
+
+Generate a dedicated support token with `openssl rand -hex 32`. Keep it separate
+from monitoring credentials and license keys. Configure the same value on both
+backends; the installers do not generate or register support tokens automatically.
+
+For a fresh cloud Platform installation, include these variables alongside your
+usual installer settings:
+
+```bash
+curl -fsSL https://install.onyxio.com.au | sudo env \
+  ONYXIO_DEPLOYMENT=cloud \
+  PUBLIC_SERVER_URL=https://cloud.example.com \
+  ONYXIO_SUPPORT_URL=https://ops.example.com \
+  ONYXIO_SUPPORT_TOKEN=YOUR_GENERATED_SUPPORT_TOKEN \
+  bash
+```
+
+For a fresh Ops installation:
+
+```bash
+curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+  PUBLIC_URL=https://ops.example.com \
+  SUPPORT_INTEGRATIONS='[{"id":"cloud-production","kind":"cloud","token":"YOUR_GENERATED_SUPPORT_TOKEN"}]' \
+  SUPPORT_REPLY_TO=support@example.com \
+  SUPPORT_INBOX=tickets@example.com \
+  bash
+```
+
+Replace both token placeholders with the same generated value. Configure the
+existing `EMAIL_PROVIDER`, `EMAIL_FROM`, and `SMTP_*` settings in Ops for email
+receipts and internal notifications. Tickets can be created without SMTP.
+
+| Installer | Optional environment variables | Default |
+| --- | --- | --- |
+| Platform (`install.sh`, public root installer, online/offline package installers) | `ONYXIO_SUPPORT_URL`, `ONYXIO_SUPPORT_TOKEN` | Blank; support launches disabled |
+| Ops (`ops-install.sh`) | `SUPPORT_INTEGRATIONS`, `SUPPORT_REPLY_TO`, `SUPPORT_INBOX` | Empty integration list and blank mailboxes |
+
+For a package install, pass the same Platform variables when running its
+installer. Fresh Platform installs reject incomplete URL/token pairs, tokens
+shorter than 32 characters, and URLs containing credentials, paths, queries, or
+fragments. HTTP is accepted only for `localhost` or `127.0.0.1` development.
+Ops validates integration JSON and credential fields when its backend starts.
+The installers quote these settings for Compose and save them in `.env` with
+mode `0600`. Keep tokens out of Git and frontend/Vite variables.
+
+### On-prem provisioning and site identity
+
+Use a different token for each on-prem installation. Add an entry to the Ops
+`SUPPORT_INTEGRATIONS` array alongside any existing entries:
+
+```json
+{"id":"hotel-installation","kind":"on-prem","clientId":"OPS_CLIENT_ID","installationId":"PLATFORM_INSTALLATION_ID","token":"UNIQUE_SUPPORT_TOKEN_FOR_THIS_INSTALLATION"}
+```
+
+Use the actual installation ID from Platform **Admin > Settings > License** (or
+the `ONYXIO_INSTALLATION_ID` supplied during installation). Register the Platform
+site IDs under the matching client and installation in Ops before enabling
+support. Set that installation's `ONYXIO_SUPPORT_URL` and `ONYXIO_SUPPORT_TOKEN`
+to the Ops origin and its dedicated token. A license or installation ID alone
+does not authorize support access.
+
+When a customer opens **Contact support**, Platform verifies their membership
+and selected site. Ops uses the registered installation/site mapping for on-prem
+requests and the verified organization/site context for cloud requests.
+
+### Enabling existing installations
+
+Update the installed backend `.env` files; rerunning a fresh installer is not an
+upgrade. In `/opt/onyxio/.env` (or the package installation directory), add:
+
+```dotenv
+ONYXIO_SUPPORT_URL=https://ops.example.com
+ONYXIO_SUPPORT_TOKEN=YOUR_GENERATED_SUPPORT_TOKEN
+```
+
+In `/opt/onyxio-management/.env`, set `PUBLIC_URL` to that same Ops origin and add
+the matching `SUPPORT_INTEGRATIONS` JSON array and optional mailbox settings.
+Keep the JSON on one line, surrounded by single quotes as in the command above;
+merge new entries into any existing array. Use generated hexadecimal tokens to
+avoid Compose interpolation in manually edited values.
+
+After upgrading both images to releases containing support, recreate each
+backend container from its installation directory with `docker compose up -d
+--force-recreate onyxio`. Package installs use the service name `platform`.
+If HTTPS is enabled, retain the existing Compose overlays, for example:
+`docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+--force-recreate onyxio`. A container restart alone does not reload `.env`.
+
+`upgrade.sh` preserves existing support settings, including tokens. It does not
+enable support on unconfigured installations or replace saved credentials with
+values from the shell running the upgrade. After provisioning, refresh the admin
+panel and submit a test ticket for a known site to verify its identity in Ops.
+
 ## Cloud Control Plane Installs
 
 The same full installer can run the hosted cloud backend when

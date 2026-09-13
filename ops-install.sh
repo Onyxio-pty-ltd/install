@@ -59,7 +59,15 @@ Optional live Cloud customers connection (configured on the Ops backend only):
   The key must match ONYXIO_CUSTOMER_MANAGEMENT_API_KEY on the platform.
   Leave both blank to leave Cloud customers unconfigured.
 
-Optional team invitation email (links use PUBLIC_URL):
+Optional customer support (the form uses PUBLIC_URL):
+  SUPPORT_INTEGRATIONS='[{"id":"cloud-production","kind":"cloud","token":"YOUR_DEDICATED_SUPPORT_TOKEN"}]'
+  SUPPORT_REPLY_TO=support@example.com
+  SUPPORT_INBOX=support@example.com
+  Each token must contain at least 32 characters and match the platform's
+  ONYXIO_SUPPORT_TOKEN. On-prem entries also require clientId and installationId.
+  Leave SUPPORT_INTEGRATIONS unset to disable customer support launches.
+
+Optional team invitation and customer support email (links use PUBLIC_URL):
   EMAIL_PROVIDER=smtp
   EMAIL_FROM='Onyxio <no-reply@example.com>'
   SMTP_HOST=smtp.example.com
@@ -579,6 +587,10 @@ CORS_ORIGIN=${public_url}
 
 ONYXIO_CLOUD_PLATFORM_URL=$(quote_compose_env_value "${ONYXIO_CLOUD_PLATFORM_URL:-}")
 ONYXIO_CLOUD_PLATFORM_API_KEY=$(quote_compose_env_value "${ONYXIO_CLOUD_PLATFORM_API_KEY:-}")
+
+SUPPORT_INTEGRATIONS=$(quote_compose_env_value "${SUPPORT_INTEGRATIONS:-[]}")
+SUPPORT_REPLY_TO=$(quote_compose_env_value "${SUPPORT_REPLY_TO:-}")
+SUPPORT_INBOX=$(quote_compose_env_value "${SUPPORT_INBOX:-}")
 
 PORT=${PORT}
 DATA_FILE=/app/backend/data/app-data.json
