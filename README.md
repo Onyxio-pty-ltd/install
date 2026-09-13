@@ -372,13 +372,15 @@ Use a different token for each on-prem installation. Add an entry to the Ops
 
 Use the actual installation ID from Platform **Admin > Settings > License** (or
 the `ONYXIO_INSTALLATION_ID` supplied during installation). Register the Platform
-site IDs under the matching client and installation in Ops before enabling
-support. Set that installation's `ONYXIO_SUPPORT_URL` and `ONYXIO_SUPPORT_TOKEN`
-to the Ops origin and its dedicated token. A license or installation ID alone
+site IDs under the matching client and installation in Ops for site-specific
+support. General requests using **No specific site** only require the registered
+client and installation. Set that installation's `ONYXIO_SUPPORT_URL` and
+`ONYXIO_SUPPORT_TOKEN` to the Ops origin and its dedicated token. A license or installation ID alone
 does not authorize support access.
 
-When a customer opens **Contact support**, Platform verifies their membership
-and selected site. Ops uses the registered installation/site mapping for on-prem
+When a customer opens **Contact support**, they can select a site or choose
+**No specific site**. Platform verifies their organization membership and any
+selected site. Ops uses the registered installation/site mapping for on-prem
 requests and the verified organization/site context for cloud requests.
 
 ### Enabling existing installations
