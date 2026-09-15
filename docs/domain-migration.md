@@ -47,26 +47,19 @@ See [GitHub's custom-domain instructions](https://docs.github.com/en/pages/confi
 
 ## Existing servers and old links
 
-Already installed helpers can contain the old hostname. Changing this repository
-does not rewrite files on those servers. Keep the old hostname working with an
-HTTPS redirect at Cloudflare or another redirect service:
+`tools.onyxio.app` fully replaces the old hostname. No legacy DNS record or
+redirect is maintained.
 
-```text
-https://install.onyxio.com.au/<path>?<query>
-  -> https://tools.onyxio.app/<path>?<query>
-```
+Already installed helpers can still contain the old hostname. Changing this
+repository does not rewrite files on those servers. Use the new public URLs
+for future operations and replace the old hostname in any saved commands or
+installed lifecycle wrappers before using them. Normal platform upgrades from
+the new URL refresh the installed upgrade/uninstall wrappers unless
+`ONYXIO_SKIP_HOST_REFRESH=true`. Management uninstall wrappers need their URL
+updated separately. Rebuild older deployment bundles before reusing them.
 
-Preserve the path and query string, and keep a valid certificate for the old
-hostname. A DNS CNAME alone does not provide an HTTP redirect. A Cloudflare
-redirect requires a proxied DNS record for the old hostname and an edge redirect
-rule. Verify the new endpoints before enabling the redirect, and check that old
-root, upgrade, uninstall, and casting-host URLs return the corresponding scripts.
-
-Normal platform upgrades refresh the installed upgrade/uninstall wrappers to
-the new domain unless `ONYXIO_SKIP_HOST_REFRESH=true`. Existing management
-uninstall wrappers and previously built deployment bundles can still use the old
-domain, so retain the redirect for those installations. Explicit
-`ONYXIO_INSTALL_BASE_URL` overrides continue to work for supporting downloads.
+Explicit `ONYXIO_INSTALL_BASE_URL` overrides continue to work for supporting
+downloads; update any override that still points to the retired hostname.
 
 The sibling Platform repository also has legacy copies under
 `backend/deploy/installer-site/`; migrate their URLs before using them to publish

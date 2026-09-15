@@ -8,7 +8,7 @@ The root URL continues to serve the same script as `/install.sh`. Use
 host installation and updates use `/install-casting-host.sh`.
 
 See [domain migration](docs/domain-migration.md) for GitHub Pages, DNS, and
-compatibility setup for existing servers.
+migration steps for existing servers.
 
 ## Host prerequisites
 
