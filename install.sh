@@ -263,7 +263,7 @@ EOF
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer with sudo:" >&2
-    echo "  curl -fsSL https://install.onyxio.com.au | sudo bash" >&2
+    echo "  curl -fsSL https://tools.onyxio.app | sudo bash" >&2
     exit 1
   fi
 }
@@ -421,7 +421,7 @@ install_network_agent() {
   if [ -f "$agent_source" ]; then
     cp "$agent_source" "$INSTALL_DIR/network-agent/agent.py"
   else
-    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/network-agent.py" \
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://tools.onyxio.app}/network-agent.py" \
       -o "$INSTALL_DIR/network-agent/agent.py"
   fi
   chmod 0755 "$INSTALL_DIR/network-agent/agent.py"
@@ -784,7 +784,7 @@ write_watchdog_script() {
   if [ -f "$watchdog_source" ]; then
     cp "$watchdog_source" "$INSTALL_DIR/bin/watchdog"
   else
-    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/watchdog.sh" \
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://tools.onyxio.app}/watchdog.sh" \
       -o "$INSTALL_DIR/bin/watchdog"
   fi
   chmod +x "$INSTALL_DIR/bin/watchdog"
@@ -826,14 +826,14 @@ write_lifecycle_scripts() {
   cat > "$INSTALL_DIR/upgrade.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | bash -s -- "$@"
+curl -fsSL https://tools.onyxio.app/upgrade.sh | bash -s -- "$@"
 EOF
   chmod +x "$INSTALL_DIR/upgrade.sh"
 
   cat > "$INSTALL_DIR/uninstall.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-curl -fsSL https://install.onyxio.com.au/uninstall.sh | bash -s -- "$@"
+curl -fsSL https://tools.onyxio.app/uninstall.sh | bash -s -- "$@"
 EOF
   chmod +x "$INSTALL_DIR/uninstall.sh"
 }

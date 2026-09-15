@@ -317,7 +317,7 @@ bool_true() {
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer with sudo:" >&2
-    echo "  curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env PUBLIC_URL=https://console.example.com bash" >&2
+    echo "  curl -fsSL https://tools.onyxio.app/ops-install.sh | sudo env PUBLIC_URL=https://console.example.com bash" >&2
     exit 1
   fi
 }
@@ -749,7 +749,7 @@ write_watchdog_script() {
   if [ -f "$watchdog_source" ]; then
     cp "$watchdog_source" "$INSTALL_DIR/bin/watchdog"
   else
-    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/watchdog.sh" \
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://tools.onyxio.app}/watchdog.sh" \
       -o "$INSTALL_DIR/bin/watchdog"
   fi
   chmod +x "$INSTALL_DIR/bin/watchdog"
@@ -796,7 +796,7 @@ write_lifecycle_scripts() {
 #!/usr/bin/env bash
 set -euo pipefail
 export ONYXIO_INSTALL_DIR="${INSTALL_DIR}"
-curl -fsSL https://install.onyxio.com.au/uninstall.sh | bash -s -- "\$@"
+curl -fsSL https://tools.onyxio.app/uninstall.sh | bash -s -- "\$@"
 EOF
   chmod +x "$INSTALL_DIR/uninstall.sh"
 }

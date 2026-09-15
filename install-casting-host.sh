@@ -289,7 +289,7 @@ resolve_server_image() {
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer with sudo:" >&2
-    echo "  curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo bash" >&2
+    echo "  curl -fsSL https://tools.onyxio.app/install-casting-host.sh | sudo bash" >&2
     exit 1
   fi
 }
@@ -375,7 +375,7 @@ install_network_agent() {
   if [ -f "$agent_source" ]; then
     cp "$agent_source" "$INSTALL_DIR/network-agent/agent.py"
   else
-    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/network-agent.py" \
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://tools.onyxio.app}/network-agent.py" \
       -o "$INSTALL_DIR/network-agent/agent.py"
   fi
   chmod 0755 "$INSTALL_DIR/network-agent/agent.py"
@@ -526,7 +526,7 @@ install_self_if_possible() {
   if [ -f "$SOURCE_DIR/install-casting-host.sh" ]; then
     cp "$SOURCE_DIR/install-casting-host.sh" "$INSTALL_DIR/install-casting-host.sh"
   elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/install-casting-host.sh" \
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://tools.onyxio.app}/install-casting-host.sh" \
       -o "$INSTALL_DIR/install-casting-host.sh" || return
   else
     return

@@ -295,7 +295,7 @@ install_network_agent() {
   if [ -f "$agent_source" ]; then
     cp "$agent_source" "$SCRIPT_DIR/network-agent/agent.py"
   else
-    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://install.onyxio.com.au}/network-agent.py" \
+    curl -fsSL "${ONYXIO_INSTALL_BASE_URL:-https://tools.onyxio.app}/network-agent.py" \
       -o "$SCRIPT_DIR/network-agent/agent.py"
   fi
   chmod 0755 "$SCRIPT_DIR/network-agent/agent.py"

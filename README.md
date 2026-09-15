@@ -1,6 +1,14 @@
-# Onyxio Installer
+# Onyxio Tools
 
-Public installer endpoint for internet-connected Onyxio servers.
+Public scripts for installing, uninstalling, updating, and upgrading
+internet-connected Onyxio servers at `https://tools.onyxio.app`.
+
+The root URL continues to serve the same script as `/install.sh`. Use
+`/upgrade.sh` to pull an updated image or upgrade to a selected version; casting
+host installation and updates use `/install-casting-host.sh`.
+
+See [domain migration](docs/domain-migration.md) for GitHub Pages, DNS, and
+compatibility setup for existing servers.
 
 ## Host prerequisites
 
@@ -33,13 +41,13 @@ sudo docker compose version
 Install Onyxio:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo bash
+curl -fsSL https://tools.onyxio.app | sudo bash
 ```
 
 Install the cloud control plane on a cloud VM:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo env \
+curl -fsSL https://tools.onyxio.app | sudo env \
   ONYXIO_DEPLOYMENT=cloud \
   PUBLIC_SERVER_URL=https://cloud.example.com \
   bash
@@ -48,7 +56,7 @@ curl -fsSL https://install.onyxio.com.au | sudo env \
 Install the cloud-only management console:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/ops-install.sh | sudo env \
   PUBLIC_URL=https://console.example.com \
   bash
 ```
@@ -56,19 +64,19 @@ curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
 Uninstall Onyxio:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo bash
+curl -fsSL https://tools.onyxio.app/uninstall.sh | sudo bash
 ```
 
 Upgrade Onyxio:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
+curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
 ```
 
 Install or update a casting host for cloud-managed properties:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/install-casting-host.sh | sudo env \
   CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
   CASTING_HOST_ID=property-a-east \
   CASTING_HOST_NAME="Property A East" \
@@ -80,13 +88,13 @@ curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
 For a non-interactive lab reset:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo bash -s -- --yes --remove-images
+curl -fsSL https://tools.onyxio.app/uninstall.sh | sudo bash -s -- --yes --remove-images
 ```
 
 If the container image is private, pass a registry token:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo env \
+curl -fsSL https://tools.onyxio.app | sudo env \
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
   ONYXIO_REGISTRY_TOKEN=TOKEN \
   bash
@@ -114,7 +122,7 @@ CASTING_HOST_TOKEN=...
 Example:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo env \
+curl -fsSL https://tools.onyxio.app | sudo env \
   ONYXIO_VERSION=2026.07.12 \
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
   ONYXIO_REGISTRY_TOKEN=TOKEN \
@@ -150,7 +158,7 @@ production license-signing private key under the install directory, and always
 sets the cloud flags that disable on-prem services.
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/ops-install.sh | sudo env \
   PUBLIC_URL=https://console.example.com \
   ONYXIO_MANAGEMENT_VERSION=latest \
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
@@ -270,7 +278,7 @@ openssl rand -hex 32
 For a new cloud platform installation:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo env \
+curl -fsSL https://tools.onyxio.app | sudo env \
   ONYXIO_DEPLOYMENT=cloud \
   PUBLIC_SERVER_URL=https://cloud.example.com \
   ONYXIO_CUSTOMER_MANAGEMENT_API_KEY=YOUR_GENERATED_KEY \
@@ -280,7 +288,7 @@ curl -fsSL https://install.onyxio.com.au | sudo env \
 For a new Ops installation:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/ops-install.sh | sudo env \
   PUBLIC_URL=https://ops.example.com \
   ONYXIO_CLOUD_PLATFORM_URL=https://cloud.example.com \
   ONYXIO_CLOUD_PLATFORM_API_KEY=YOUR_GENERATED_KEY \
@@ -325,7 +333,7 @@ For a fresh cloud Platform installation, include these variables alongside your
 usual installer settings:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo env \
+curl -fsSL https://tools.onyxio.app | sudo env \
   ONYXIO_DEPLOYMENT=cloud \
   PUBLIC_SERVER_URL=https://cloud.example.com \
   ONYXIO_SUPPORT_URL=https://ops.example.com \
@@ -336,7 +344,7 @@ curl -fsSL https://install.onyxio.com.au | sudo env \
 For a fresh Ops installation:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/ops-install.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/ops-install.sh | sudo env \
   PUBLIC_URL=https://ops.example.com \
   SUPPORT_INTEGRATIONS='[{"id":"cloud-production","kind":"cloud","token":"YOUR_GENERATED_SUPPORT_TOKEN"}]' \
   SUPPORT_REPLY_TO=support@example.com \
@@ -427,7 +435,7 @@ cloud installs created with `false` must change that value to `true` in
 Cloud installs should provide a public HTTP(S) URL:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au | sudo env \
+curl -fsSL https://tools.onyxio.app | sudo env \
   ONYXIO_VERSION=2026.08.15 \
   ONYXIO_DEPLOYMENT=cloud \
   PUBLIC_SERVER_URL=https://cloud.example.com \
@@ -488,7 +496,7 @@ Re-run the same command with a new `ONYXIO_VERSION` or `ONYXIO_SERVER_IMAGE` to
 update the casting host:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/install-casting-host.sh | sudo env \
   ONYXIO_VERSION=2026.08.15 \
   CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
   CASTING_HOST_ID=property-a-east \
@@ -501,7 +509,7 @@ curl -fsSL https://install.onyxio.com.au/install-casting-host.sh | sudo env \
 To remove a casting-host-only install:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/uninstall.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/uninstall.sh | sudo env \
   ONYXIO_INSTALL_DIR=/opt/onyxio-casting-host \
   ONYXIO_UNINSTALL_CONFIRM=true \
   bash
@@ -627,13 +635,13 @@ Upgrades preserve existing port and URL settings in `.env`, including `PORT`,
 Pinned version:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
+curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
 ```
 
 Full image override:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env \
   ONYXIO_SERVER_IMAGE=ghcr.io/onyxio-pty-ltd/server:2026.08.15 \
   bash
 ```
@@ -641,7 +649,7 @@ curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
 If the image is private, pass registry credentials:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env \
   ONYXIO_VERSION=2026.08.15 \
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME \
   ONYXIO_REGISTRY_TOKEN=TOKEN \
@@ -653,7 +661,7 @@ upgrade. Skip the automatic database backup only when another verified backup
 already exists:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env \
   ONYXIO_VERSION=2026.08.15 \
   ONYXIO_SKIP_UPGRADE_BACKUP=true \
   bash
@@ -662,7 +670,7 @@ curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
 Host support refresh can be skipped for emergency image-only upgrades:
 
 ```bash
-curl -fsSL https://install.onyxio.com.au/upgrade.sh | sudo env \
+curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env \
   ONYXIO_VERSION=2026.08.15 \
   ONYXIO_SKIP_HOST_REFRESH=true \
   bash
