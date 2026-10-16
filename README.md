@@ -466,6 +466,12 @@ It starts the casting runtime immediately and reports the installed
 `ONYXIO_VERSION` as the casting module version unless `CASTING_HOST_VERSION` is
 set explicitly.
 
+The installer also writes `PUBLIC_SERVER_URL` for Philips dashboard recovery,
+derived from the control-plane origin (`wss` becomes `https` and
+`ws` becomes `http`). Set `PUBLIC_SERVER_URL` explicitly when TVs use a different
+public origin. Upgrades retain that override while the control-plane URL stays
+the same; changing the control plane derives a new origin unless overridden.
+
 For manual upgrades using an existing private credential file:
 
 ```bash

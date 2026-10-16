@@ -50,6 +50,7 @@ Environment:
   ONYXIO_REGISTRY_USERNAME=YOUR_GITHUB_USERNAME
   ONYXIO_REGISTRY_TOKEN=TOKEN
   CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
+  PUBLIC_SERVER_URL=https://cloud.example.com   # Optional dashboard origin override.
   CASTING_HOST_ID=property-a
   CASTING_HOST_NAME="Property A"
   CASTING_HOST_SITE_ID=site-1
@@ -432,18 +433,37 @@ require_value() {
   fi
 }
 
-validate_control_plane_url() {
-  local control_plane_url="$1"
+resolve_public_server_url() {
+  # The module has no backend database from which to read the dashboard origin.
+  # Validate both URLs, then use the HTTP equivalent of the control-plane origin
+  # unless the installation has an explicit public URL for its TVs.
+  python3 - "$1" "$2" <<'PY'
+import sys
+from urllib.parse import urlsplit
 
-  case "$control_plane_url" in
-    ws://* | wss://* | http://* | https://*)
-      return
-      ;;
-    *)
-      echo "CASTING_CONTROL_PLANE_WS_URL must start with ws://, wss://, http://, or https://." >&2
-      exit 1
-      ;;
-  esac
+def parse_url(value, schemes):
+    parsed = urlsplit(value)
+    if (parsed.scheme not in schemes or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None
+            or any(c.isspace() for c in value) or any(c in value for c in "\"'\\$")
+            or (parsed.port is not None and not 0 < parsed.port <= 65535)):
+        raise ValueError()
+    return parsed
+
+try:
+    control = parse_url(sys.argv[1], ("http", "https", "ws", "wss"))
+    public = parse_url(sys.argv[2], ("http", "https")) if sys.argv[2] else control
+    scheme = {"ws": "http", "wss": "https"}.get(public.scheme, public.scheme)
+    hostname = public.hostname
+    if ":" in hostname:
+        hostname = "[" + hostname + "]"
+    port = public.port
+    suffix = ":" + str(port) if port and port != (443 if scheme == "https" else 80) else ""
+    print(scheme + "://" + hostname + suffix)
+except ValueError:
+    print("Control plane URL must be HTTP(S) or WS(S), and PUBLIC_SERVER_URL must be HTTP(S); both require a host and cannot contain credentials.", file=sys.stderr)
+    sys.exit(1)
+PY
 }
 
 docker_login_if_needed() {
@@ -619,7 +639,7 @@ except Exception:
 }
 
 main() {
-  local env_file control_plane_url host_id host_name site_id host_token enrollment_code
+  local env_file control_plane_url saved_control_plane_url public_server_url host_id host_name site_id host_token enrollment_code
   enrollment_code=""
   if [ "$ENROLLMENT_STDIN" = true ]; then
     IFS= read -r enrollment_code || [ -n "$enrollment_code" ]
@@ -639,7 +659,8 @@ main() {
   touch "$INSTALL_DIR/.env"
 
   env_file="$INSTALL_DIR/.env"
-  control_plane_url="${CASTING_CONTROL_PLANE_WS_URL:-$(env_value "$env_file" CASTING_CONTROL_PLANE_WS_URL)}"
+  saved_control_plane_url="$(env_value "$env_file" CASTING_CONTROL_PLANE_WS_URL)"
+  control_plane_url="${CASTING_CONTROL_PLANE_WS_URL:-$saved_control_plane_url}"
   host_id="${CASTING_HOST_ID:-$(env_value "$env_file" CASTING_HOST_ID)}"
   host_name="${CASTING_HOST_NAME:-$(env_value "$env_file" CASTING_HOST_NAME)}"
   site_id="${CASTING_HOST_SITE_ID:-$(env_value "$env_file" CASTING_HOST_SITE_ID)}"
@@ -669,7 +690,11 @@ main() {
       exit 1
     fi
   done
-  validate_control_plane_url "$control_plane_url"
+  public_server_url="${PUBLIC_SERVER_URL:-}"
+  if [ -z "$public_server_url" ] && [ "$control_plane_url" = "$saved_control_plane_url" ]; then
+    public_server_url="$(env_value "$env_file" PUBLIC_SERVER_URL)"
+  fi
+  public_server_url="$(resolve_public_server_url "$control_plane_url" "$public_server_url")"
   if [ -n "$enrollment_code" ]; then
     host_token="$(redeem_enrollment "$control_plane_url" "$host_id" "$site_id" "$enrollment_code")"
     unset enrollment_code
@@ -682,6 +707,7 @@ main() {
   set_env_value "$env_file" ONYXIO_VERSION "$VERSION"
   set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$SERVER_IMAGE"
   set_env_value "$env_file" CASTING_CONTROL_PLANE_WS_URL "$control_plane_url"
+  set_env_value "$env_file" PUBLIC_SERVER_URL "$public_server_url"
   set_env_value "$env_file" CASTING_HOST_ID "$host_id"
   set_env_value "$env_file" CASTING_HOST_NAME "$host_name"
   set_env_value "$env_file" CASTING_HOST_SITE_ID "$site_id"
