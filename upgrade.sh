@@ -747,7 +747,6 @@ ensure_env_defaults() {
     set_env_default "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
     set_env_default "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
   fi
-  set_env_default "$env_file" CASTING_HOST_TOKEN "$(random_secret)"
   set_env_default "$env_file" GRAPHQL_BODY_LIMIT 150mb
   set_env_default "$env_file" ONYXIO_LICENSE_DIR /app/backend/uploads/license
   set_env_default "$env_file" ONYXIO_LICENSE_PUBLIC_KEY_FILE /app/backend/uploads/license/public-key.pem

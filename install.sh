@@ -846,10 +846,9 @@ write_env_file() {
     exit 1
   fi
 
-  local postgres_password jwt_secret casting_host_token
+  local postgres_password jwt_secret
   postgres_password="$(random_secret)"
   jwt_secret="$(random_secret)"
-  casting_host_token="$(random_secret)"
 
   local public_server_url network_apply_mode
   public_server_url="$(resolve_public_server_url "$server_ip")"
@@ -875,8 +874,6 @@ PHILIPS_WEBSERVICES_ENABLED=${PHILIPS_WEBSERVICES_ENABLED:-true}
 PORT=80
 ONYXIO_NETWORK_APPLY_MODE=${network_apply_mode}
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
-
-CASTING_HOST_TOKEN=${casting_host_token}
 
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${postgres_password}

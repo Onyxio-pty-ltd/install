@@ -581,7 +581,6 @@ if [ ! -f .env ]; then
 
   POSTGRES_PASSWORD="$(random_secret)"
   JWT_SECRET="$(random_secret)"
-  CASTING_HOST_TOKEN="$(random_secret)"
 
   PUBLIC_URL="$(resolve_public_server_url "$SERVER_IP")"
   NETWORK_APPLY_MODE="agent"
@@ -612,7 +611,6 @@ CASTING_HOST_ID=onprem-main
 CASTING_HOST_NAME=On-prem Main
 # Set this to the existing site ID before starting a standalone casting host.
 CASTING_HOST_SITE_ID=${CASTING_HOST_SITE_ID:-}
-CASTING_HOST_TOKEN=${CASTING_HOST_TOKEN}
 
 # Casting pairings are normally cleared on checkout. This cleanup removes
 # pairings whose mobile app has not reconnected within the expiry window.

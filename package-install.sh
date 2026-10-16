@@ -570,7 +570,6 @@ if [ ! -f .env ]; then
 
   POSTGRES_PASSWORD="$(random_secret)"
   JWT_SECRET="$(random_secret)"
-  CASTING_HOST_TOKEN="$(random_secret)"
 
   PUBLIC_URL="$(resolve_public_server_url "$SERVER_IP")"
   NETWORK_APPLY_MODE="agent"
@@ -593,8 +592,6 @@ PHILIPS_WEBSERVICES_ENABLED=${PHILIPS_WEBSERVICES_ENABLED:-true}
 PORT=80
 ONYXIO_NETWORK_APPLY_MODE=${NETWORK_APPLY_MODE}
 ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
-
-CASTING_HOST_TOKEN=${CASTING_HOST_TOKEN}
 
 # Casting pairings are normally cleared on checkout. This cleanup removes
 # pairings whose mobile app has not reconnected within the expiry window.

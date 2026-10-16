@@ -81,7 +81,7 @@ curl -fsSL https://tools.onyxio.app/install-casting-host.sh | sudo env \
   CASTING_HOST_ID=property-a-east \
   CASTING_HOST_NAME="Property A East" \
   CASTING_HOST_SITE_ID=site-1 \
-  CASTING_HOST_TOKEN=shared-secret \
+  CASTING_MODULE_CREDENTIAL_FILE=/secure/module-credential \
   bash
 ```
 
@@ -116,7 +116,7 @@ ONYXIO_ENABLE_HTTPS=true
 HTTPS_HOST=remote.example-hotel.com
 HTTPS_LISTEN_ADDR=172.20.0.10
 HTTPS_PORT=443
-CASTING_HOST_TOKEN=...
+CASTING_MODULE_CREDENTIAL_FILE=/secure/module-credential
 ```
 
 Example:
@@ -453,8 +453,9 @@ the separate casting-host install below.
 Full on-prem installs no longer start a fixed `casting-host` Docker Compose
 service. Open Admin > Settings > Casting and use Add casting bridge to create
 or remove local property-network casting bridge processes. The backend starts
-those bridge processes with a localhost control-plane websocket and the shared
-`CASTING_HOST_TOKEN` from `/opt/onyxio/.env`.
+those bridge processes with a localhost control-plane WebSocket and a distinct
+site-bound credential, passed only in the child process environment. The backend
+stores only its verifier and rotates the credential when restarting the bridge.
 
 The on-prem Network tab still configures backend host interfaces and HTTPS.
 Casting bridge network settings live on each bridge in Admin > Settings >
@@ -478,19 +479,24 @@ CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
 CASTING_HOST_ID=property-a-east
 CASTING_HOST_NAME="Property A East"
 CASTING_HOST_SITE_ID=site-1
-CASTING_HOST_TOKEN=shared-secret
+CASTING_MODULE_CREDENTIAL_FILE=/secure/module-credential
 ```
 
 The casting host reports detected property-network interfaces to the control
-plane. The backend assigns it to the reported site, derives its organization,
-and sends that site's current mapping. Select the guest and device roles in
+plane. The backend authenticates its module credential, checks the reserved site
+and organization, and sends that site’s current mapping. Select the guest and device roles in
 Admin > Settings > Casting; those settings are sent back to the host over the
 casting control websocket. The casting host also installs the local
 `onyxio-network-agent.service` so network changes requested from Admin are
 applied on the property-network machine, not by the cloud backend.
-Create the site first and use its actual ID. Each site accepts one module;
-registration rejects conflicting assignments. When moving a module in Admin,
-update `CASTING_HOST_SITE_ID` in its environment before restarting it.
+Provision a module in the site’s Admin casting settings first, then use the issued
+host ID, site ID and credential. The secret is shown once. The installer prompts
+without echoing it unless a private credential file is supplied, and saves it in
+a root-only file mounted read-only into the module. Re-running the installer after
+rotation prompts for the replacement credential. Each site accepts one module;
+provisioning rejects conflicting assignments. Moving or unassigning a module
+revokes its credential. After an authorized move, issue a replacement credential
+for the destination site and update both the site ID and credential before restarting.
 
 Re-run the same command with a new `ONYXIO_VERSION` or `ONYXIO_SERVER_IMAGE` to
 update the casting host:
@@ -502,7 +508,7 @@ curl -fsSL https://tools.onyxio.app/install-casting-host.sh | sudo env \
   CASTING_HOST_ID=property-a-east \
   CASTING_HOST_NAME="Property A East" \
   CASTING_HOST_SITE_ID=site-1 \
-  CASTING_HOST_TOKEN=shared-secret \
+  CASTING_MODULE_CREDENTIAL_FILE=/secure/module-credential \
   bash
 ```
 

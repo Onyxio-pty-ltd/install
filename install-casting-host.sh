@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 INSTALL_DIR="${ONYXIO_INSTALL_DIR:-/opt/onyxio-casting-host}"
 VERSION="${ONYXIO_VERSION:-latest}"
@@ -35,7 +36,8 @@ Options:
   --host-id HOST_ID             Stable casting host id shown in cloud settings.
   --host-name NAME              Display name shown in cloud settings.
   --site-id SITE_ID              Existing site id served by this module.
-  --token TOKEN                 Casting host shared token.
+  --credential-file PATH        Read the site-bound module credential from a private file.
+                                Otherwise prompts without echoing the credential.
   -h, --help                    Show this help.
 
 Environment:
@@ -49,7 +51,7 @@ Environment:
   CASTING_HOST_ID=property-a
   CASTING_HOST_NAME="Property A"
   CASTING_HOST_SITE_ID=site-1
-  CASTING_HOST_TOKEN=shared-secret
+  CASTING_MODULE_CREDENTIAL_FILE=/secure/module-credential
   ONYXIO_NETWORK_AGENT_URL=http://127.0.0.1:8097
 EOF
 }
@@ -144,16 +146,16 @@ while [ "$#" -gt 0 ]; do
       CASTING_HOST_SITE_ID="${1#*=}"
       shift
       ;;
-    --token)
+    --credential-file)
       if [ "$#" -lt 2 ]; then
-        echo "--token requires a value." >&2
+        echo "--credential-file requires a path." >&2
         exit 1
       fi
-      CASTING_HOST_TOKEN="${2:-}"
+      CASTING_MODULE_CREDENTIAL_FILE="$2"
       shift 2
       ;;
-    --token=*)
-      CASTING_HOST_TOKEN="${1#*=}"
+    --credential-file=*)
+      CASTING_MODULE_CREDENTIAL_FILE="${1#*=}"
       shift
       ;;
     -h | --help)
@@ -501,6 +503,8 @@ write_compose_file() {
   cat > "$INSTALL_DIR/docker-compose.casting-host.yml" <<'EOF'
 services:
   casting-host:
+    healthcheck:
+      disable: true
     image: ${ONYXIO_SERVER_IMAGE}
     restart: unless-stopped
     network_mode: host
@@ -511,13 +515,15 @@ services:
       CASTING_HOST_ID: ${CASTING_HOST_ID}
       CASTING_HOST_NAME: ${CASTING_HOST_NAME}
       CASTING_HOST_SITE_ID: ${CASTING_HOST_SITE_ID}
-      CASTING_HOST_TOKEN: ${CASTING_HOST_TOKEN}
+      CASTING_MODULE_CREDENTIAL_FILE: /run/secrets/casting-module-credential
       CASTING_HOST_VERSION: ${CASTING_HOST_VERSION}
       CASTING_HOST_RUNTIME_ENABLED: ${CASTING_HOST_RUNTIME_ENABLED:-true}
       CASTING_CONTROL_PLANE_WS_URL: ${CASTING_CONTROL_PLANE_WS_URL}
       CASTING_HOST_UDP_BIND_ADDRESS: ${CASTING_HOST_UDP_BIND_ADDRESS:-0.0.0.0}
       ONYXIO_NETWORK_APPLY_MODE: ${ONYXIO_NETWORK_APPLY_MODE:-agent}
       ONYXIO_NETWORK_AGENT_URL: ${ONYXIO_NETWORK_AGENT_URL:-http://127.0.0.1:8097}
+    volumes:
+      - ./module-credential:/run/secrets/casting-module-credential:ro
     command: ["yarn", "casting:host:start"]
 EOF
 }
@@ -567,8 +573,10 @@ wait_for_casting_host() {
   while [ "$SECONDS" -lt "$deadline" ]; do
     container_id="$(compose -f docker-compose.casting-host.yml ps -q casting-host 2>/dev/null || true)"
     if [ -n "$container_id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" = "true" ]; then
-      echo "Onyxio casting host is running."
-      return
+      if docker logs "$container_id" 2>&1 | grep -q 'Casting module authenticated'; then
+        echo "Onyxio casting module authenticated and received its site snapshot."
+        return
+      fi
     fi
     sleep 1
   done
@@ -588,7 +596,6 @@ main() {
 
   mkdir -p "$INSTALL_DIR"
   touch "$INSTALL_DIR/.env"
-  install_network_agent
 
   local env_file control_plane_url host_id host_name site_id host_token
   env_file="$INSTALL_DIR/.env"
@@ -596,20 +603,32 @@ main() {
   host_id="${CASTING_HOST_ID:-$(env_value "$env_file" CASTING_HOST_ID)}"
   host_name="${CASTING_HOST_NAME:-$(env_value "$env_file" CASTING_HOST_NAME)}"
   site_id="${CASTING_HOST_SITE_ID:-$(env_value "$env_file" CASTING_HOST_SITE_ID)}"
-  host_token="${CASTING_HOST_TOKEN:-$(env_value "$env_file" CASTING_HOST_TOKEN)}"
+  host_token=""
+  if [ -n "${CASTING_MODULE_CREDENTIAL_FILE:-}" ]; then
+    host_token="$(cat -- "$CASTING_MODULE_CREDENTIAL_FILE")"
+  fi
 
   control_plane_url="$(prompt "Control plane URL" "$control_plane_url")"
   host_id="$(prompt "Casting host id" "$host_id")"
   host_name="$(prompt "Casting host name" "${host_name:-$host_id}")"
   site_id="$(prompt "Casting host site id" "$site_id")"
   if [ -z "$host_token" ]; then
-    host_token="$(prompt_secret "Casting host token")"
+    host_token="$(prompt_secret "Site-bound module credential (shown once in Admin)")"
   fi
 
   require_value "CASTING_CONTROL_PLANE_WS_URL" "$control_plane_url"
   require_value "CASTING_HOST_ID" "$host_id"
   require_value "CASTING_HOST_SITE_ID" "$site_id"
-  require_value "CASTING_HOST_TOKEN" "$host_token"
+  if [[ ! "$host_token" =~ ^ocm_[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$ ]]; then
+    echo "Issue a module credential in this site's Admin casting settings." >&2
+    exit 1
+  fi
+  for value in "$control_plane_url" "$host_id" "$host_name" "$site_id"; do
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* || "$value" == *'$'* || "$value" == *'"'* || "$value" == *"'"* || "$value" == *'\'* ]]; then
+      echo "Configuration values must be single-line and cannot contain quotes, dollar signs or backslashes." >&2
+      exit 1
+    fi
+  done
   validate_control_plane_url "$control_plane_url"
 
   set_env_value "$env_file" ONYXIO_VERSION "$VERSION"
@@ -618,12 +637,25 @@ main() {
   set_env_value "$env_file" CASTING_HOST_ID "$host_id"
   set_env_value "$env_file" CASTING_HOST_NAME "$host_name"
   set_env_value "$env_file" CASTING_HOST_SITE_ID "$site_id"
-  set_env_value "$env_file" CASTING_HOST_TOKEN "$host_token"
+  local credential_tmp
+  credential_tmp="$(mktemp "$INSTALL_DIR/.module-credential.XXXXXX")"
+  printf '%s\n' "$host_token" > "$credential_tmp"
+  chmod 0600 "$credential_tmp"
+  mv -f "$credential_tmp" "$INSTALL_DIR/module-credential"
+  unset host_token
+  # Remove obsolete shared secrets from prior installations during explicit upgrade.
+  local cleaned_env
+  cleaned_env="$(mktemp)"
+  awk '!/^CASTING_HOST_TOKEN=/ && !/^CASTING_MODULE_CREDENTIAL=/ && !/^CASTING_MODULE_CREDENTIAL_FILE=/' "$env_file" > "$cleaned_env"
+  cat "$cleaned_env" > "$env_file"
+  rm -f "$cleaned_env"
+  chmod 0600 "$env_file"
   set_env_value "$env_file" CASTING_HOST_VERSION "${CASTING_HOST_VERSION:-$VERSION}"
   set_env_value "$env_file" CASTING_HOST_RUNTIME_ENABLED true
   set_env_value "$env_file" ONYXIO_NETWORK_APPLY_MODE agent
   set_env_value "$env_file" ONYXIO_NETWORK_AGENT_URL http://127.0.0.1:8097
 
+  install_network_agent
   write_compose_file
   install_self_if_possible
   load_local_images_if_available
@@ -631,7 +663,7 @@ main() {
   check_control_plane_reachability "$control_plane_url"
 
   cd "$INSTALL_DIR"
-  compose -f docker-compose.casting-host.yml up -d
+  compose -f docker-compose.casting-host.yml up -d --force-recreate
   wait_for_casting_host
 
   echo
