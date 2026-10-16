@@ -11,6 +11,7 @@ REGISTRY_TOKEN="${ONYXIO_REGISTRY_TOKEN:-}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd || pwd)"
 VERSION_EXPLICIT="false"
 SERVER_IMAGE_EXPLICIT="false"
+ENROLLMENT_STDIN=false
 
 if [ -n "${ONYXIO_VERSION:-}" ]; then
   VERSION_EXPLICIT="true"
@@ -36,8 +37,9 @@ Options:
   --host-id HOST_ID             Stable casting host id shown in cloud settings.
   --host-name NAME              Display name shown in cloud settings.
   --site-id SITE_ID              Existing site id served by this module.
+  --enrollment-stdin            Read the single-use install code from stdin (Admin command).
   --credential-file PATH        Read the site-bound module credential from a private file.
-                                Otherwise prompts without echoing the credential.
+                                For upgrades using an existing installed credential.
   -h, --help                    Show this help.
 
 Environment:
@@ -144,6 +146,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --site-id=*)
       CASTING_HOST_SITE_ID="${1#*=}"
+      shift
+      ;;
+    --enrollment-stdin)
+      ENROLLMENT_STDIN=true
       shift
       ;;
     --credential-file)
@@ -586,7 +592,42 @@ wait_for_casting_host() {
   exit 1
 }
 
+# Only the short-lived code enters this process via stdin. The permanent credential
+# is returned directly to a shell variable, then saved to the private mounted file.
+redeem_enrollment() {
+  local endpoint="$1" host_id="$2" site_id="$3" code="$4"
+  endpoint="${endpoint/#wss:/https:}"
+  endpoint="${endpoint/#ws:/http:}"
+  printf '%s' "$code" | python3 -c '
+import json, sys, urllib.request
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+try:
+    data = json.dumps({"enrollmentCode": sys.stdin.read(), "hostId": sys.argv[2], "siteId": sys.argv[3]}).encode()
+    request = urllib.request.Request(sys.argv[1].rstrip("/") + "/casting/enroll", data=data,
+                                    headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
+        credential = json.loads(response.read(4096))["credential"]
+    if not isinstance(credential, str):
+        raise ValueError()
+    print(credential, end="")
+except Exception:
+    print("Enrollment failed. Generate a new install command in Admin and check the backend connection.", file=sys.stderr)
+    sys.exit(1)
+' "$endpoint" "$host_id" "$site_id"
+}
+
 main() {
+  local env_file control_plane_url host_id host_name site_id host_token enrollment_code
+  enrollment_code=""
+  if [ "$ENROLLMENT_STDIN" = true ]; then
+    IFS= read -r enrollment_code || [ -n "$enrollment_code" ]
+    if [[ ! "$enrollment_code" =~ ^oce_[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$ ]]; then
+      echo "Copy a fresh install command from Admin casting settings." >&2
+      exit 1
+    fi
+  fi
   require_root
   require_safe_install_dir
   require_docker
@@ -597,32 +638,31 @@ main() {
   mkdir -p "$INSTALL_DIR"
   touch "$INSTALL_DIR/.env"
 
-  local env_file control_plane_url host_id host_name site_id host_token
   env_file="$INSTALL_DIR/.env"
   control_plane_url="${CASTING_CONTROL_PLANE_WS_URL:-$(env_value "$env_file" CASTING_CONTROL_PLANE_WS_URL)}"
   host_id="${CASTING_HOST_ID:-$(env_value "$env_file" CASTING_HOST_ID)}"
   host_name="${CASTING_HOST_NAME:-$(env_value "$env_file" CASTING_HOST_NAME)}"
   site_id="${CASTING_HOST_SITE_ID:-$(env_value "$env_file" CASTING_HOST_SITE_ID)}"
   host_token=""
-  if [ -n "${CASTING_MODULE_CREDENTIAL_FILE:-}" ]; then
-    host_token="$(cat -- "$CASTING_MODULE_CREDENTIAL_FILE")"
-  fi
-
-  control_plane_url="$(prompt "Control plane URL" "$control_plane_url")"
-  host_id="$(prompt "Casting host id" "$host_id")"
-  host_name="$(prompt "Casting host name" "${host_name:-$host_id}")"
-  site_id="$(prompt "Casting host site id" "$site_id")"
-  if [ -z "$host_token" ]; then
-    host_token="$(prompt_secret "Site-bound module credential (shown once in Admin)")"
+  if [ -z "$enrollment_code" ]; then
+    if [ -n "${CASTING_MODULE_CREDENTIAL_FILE:-}" ]; then
+      host_token="$(cat -- "$CASTING_MODULE_CREDENTIAL_FILE")"
+    fi
+    control_plane_url="$(prompt "Control plane URL" "$control_plane_url")"
+    host_id="$(prompt "Casting host id" "$host_id")"
+    host_name="$(prompt "Casting host name" "${host_name:-$host_id}")"
+    site_id="$(prompt "Casting host site id" "$site_id")"
+    if [ -z "$host_token" ]; then
+      echo "Copy the install command from Admin > Settings > Casting, or provide an existing private credential file." >&2
+      exit 1
+    fi
+  else
+    host_name="${host_name:-$host_id}"
   fi
 
   require_value "CASTING_CONTROL_PLANE_WS_URL" "$control_plane_url"
   require_value "CASTING_HOST_ID" "$host_id"
   require_value "CASTING_HOST_SITE_ID" "$site_id"
-  if [[ ! "$host_token" =~ ^ocm_[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$ ]]; then
-    echo "Issue a module credential in this site's Admin casting settings." >&2
-    exit 1
-  fi
   for value in "$control_plane_url" "$host_id" "$host_name" "$site_id"; do
     if [[ "$value" == *$'\n'* || "$value" == *$'\r'* || "$value" == *'$'* || "$value" == *'"'* || "$value" == *"'"* || "$value" == *'\'* ]]; then
       echo "Configuration values must be single-line and cannot contain quotes, dollar signs or backslashes." >&2
@@ -630,6 +670,14 @@ main() {
     fi
   done
   validate_control_plane_url "$control_plane_url"
+  if [ -n "$enrollment_code" ]; then
+    host_token="$(redeem_enrollment "$control_plane_url" "$host_id" "$site_id" "$enrollment_code")"
+    unset enrollment_code
+  fi
+  if [[ ! "$host_token" =~ ^ocm_[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$ ]]; then
+    echo "Generate an install command in this site's Admin casting settings." >&2
+    exit 1
+  fi
 
   set_env_value "$env_file" ONYXIO_VERSION "$VERSION"
   set_env_value "$env_file" ONYXIO_SERVER_IMAGE "$SERVER_IMAGE"

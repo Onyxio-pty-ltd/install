@@ -73,17 +73,11 @@ Upgrade Onyxio:
 curl -fsSL https://tools.onyxio.app/upgrade.sh | sudo env ONYXIO_VERSION=2026.08.15 bash
 ```
 
-Install or update a casting host for cloud-managed properties:
-
-```bash
-curl -fsSL https://tools.onyxio.app/install-casting-host.sh | sudo env \
-  CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com \
-  CASTING_HOST_ID=property-a-east \
-  CASTING_HOST_NAME="Property A East" \
-  CASTING_HOST_SITE_ID=site-1 \
-  CASTING_MODULE_CREDENTIAL_FILE=/secure/module-credential \
-  bash
-```
+Install a casting host for a cloud-managed property from **Admin > Settings >
+Casting > Module enrollment**. Click **Provision casting module**, then **Copy
+install command** and run it on the property host. The command includes its own
+single-use enrollment code; no separate credential is needed. For an existing
+module, use **Generate replacement command**.
 
 For a non-interactive lab reset:
 
@@ -472,7 +466,7 @@ It starts the casting runtime immediately and reports the installed
 `ONYXIO_VERSION` as the casting module version unless `CASTING_HOST_VERSION` is
 set explicitly.
 
-Required values:
+For manual upgrades using an existing private credential file:
 
 ```bash
 CASTING_CONTROL_PLANE_WS_URL=wss://cloud.example.com
@@ -489,14 +483,16 @@ Admin > Settings > Casting; those settings are sent back to the host over the
 casting control websocket. The casting host also installs the local
 `onyxio-network-agent.service` so network changes requested from Admin are
 applied on the property-network machine, not by the cloud backend.
-Provision a module in the site’s Admin casting settings first, then use the issued
-host ID, site ID and credential. The secret is shown once. The installer prompts
-without echoing it unless a private credential file is supplied, and saves it in
-a root-only file mounted read-only into the module. Re-running the installer after
-rotation prompts for the replacement credential. Each site accepts one module;
+For a new module, open Admin > Settings > Casting, provision it, and use **Copy
+install command**. Paste that complete command into the property host terminal;
+it includes a single-use code valid for 30 minutes and needs no separate credential
+prompt. The installer exchanges the code with the backend and saves the resulting
+credential in a root-only file mounted read-only into the module. For replacements,
+generate a new command. The manual examples below use an existing private credential
+file for upgrades. Each site accepts one module;
 provisioning rejects conflicting assignments. Moving or unassigning a module
-revokes its credential. After an authorized move, issue a replacement credential
-for the destination site and update both the site ID and credential before restarting.
+revokes its credential and any unused install code. After an authorized move,
+generate and run a new install command for the destination site.
 
 Re-run the same command with a new `ONYXIO_VERSION` or `ONYXIO_SERVER_IMAGE` to
 update the casting host:
